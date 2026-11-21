@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>🔱 낚시 레이드 · 심해 작살 원정대</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared/auth-client.js?v=1.7.1"></script>
+  <script src="/shared/admin-panel.js?v=1.7.1"></script>
+  <style>
+    html, body { overscroll-behavior: none; touch-action: manipulation; }
+    #raidCanvas { touch-action: none; user-select: none; -webkit-user-select: none; }
+    .fever-glow { box-shadow: 0 0 28px rgba(250, 204, 21, 0.55), inset 0 0 22px rgba(56, 189, 248, 0.35); }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Toast -->
+  <div id="toastBox" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 rounded-2xl bg-slate-900/95 border border-cyan-400/50 text-sm font-black text-cyan-100 shadow-2xl"></div>
+
+  <!-- Top Header -->
+  <header class="w-full max-w-6xl mx-auto px-3 sm:px-5 pt-3 pb-2 flex flex-wrap items-center justify-between gap-2">
+    <div class="flex items-center gap-2">
+      <a href="/" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-black text-slate-200 transition">← 로비</a>
+      <a href="/games/fishing/" class="px-3 py-1.5 rounded-xl bg-cyan-900/60 hover:bg-cyan-800/70 border border-cyan-500/30 text-xs font-black text-cyan-200 transition">🎣 낚시터</a>
+      <h1 class="text-base sm:text-lg font-black bg-gradient-to-r from-cyan-300 via-sky-200 to-amber-300 bg-clip-text text-transparent ml-1">
+        🔱 낚시 레이드
+      </h1>
+    </div>
+    <div class="flex items-center gap-2 text-xs font-black">
+      <span id="hdrRod" class="px-2.5 py-1 rounded-xl bg-indigo-500/20 border border-indigo-400/40 text-indigo-200">🎣 +0강</span>
+      <span id="hdrQuota" class="px-2.5 py-1 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-200">오늘 3/3회</span>
+      <span id="hdrGold" class="px-2.5 py-1 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-200">⭐ 0</span>
+    </div>
+  </header>
+
+  <main class="w-full max-w-6xl mx-auto px-3 sm:px-5 pb-8 flex-1 flex flex-col gap-4">
+
+    <!-- ================= VIEW 1: PARTY LOBBY ================= -->
+    <section id="viewLobby" class="grid grid-cols-1 lg:grid-cols-12 gap-4 mt-1">
+      <!-- Create Party Card -->
+      <div class="lg:col-span-5 rounded-3xl bg-slate-900/90 border border-cyan-500/30 p-4 sm:p-5 shadow-xl flex flex-col gap-4">
+        <div>
+          <div class="text-sm font-black text-cyan-300">⚔️ 원정대 파티방 만들기</div>
+          <p class="text-[11px] text-slate-400 mt-0.5">2~4인 파티를 꾸려 70초 동안 심해 어군과 거대 보스를 작살로 격파하세요! (하루 3회 도전)</p>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-bold text-slate-300 mb-1">파티방 제목</label>
+          <input id="inpRoomTitle" type="text" maxlength="24" placeholder="예: 크라켄 4인팟 급구!" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-cyan-400" />
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-bold text-slate-300 mb-1.5">난이도 선택</label>
+          <div class="grid grid-cols-3 gap-2" id="diffSelector">
+            <button type="button" data-diff="NORMAL" class="diff-btn p-2.5 rounded-2xl border-2 border-cyan-400 bg-cyan-500/15 text-left transition">
+              <div class="text-base">🐙</div>
+              <div class="text-xs font-black text-cyan-200">노말</div>
+              <div class="text-[10px] text-slate-300">대왕 크라켄</div>
+              <div class="text-[10px] font-black text-amber-300 mt-1">5만 ⭐</div>
+            </button>
+            <button type="button" data-diff="HARD" class="diff-btn p-2.5 rounded-2xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-purple-400/60">
+              <div class="text-base">🦈</div>
+              <div class="text-xs font-black text-purple-200">하드</div>
+              <div class="text-[10px] text-slate-300">빙하 메갈로돈</div>
+              <div class="text-[10px] font-black text-amber-300 mt-1">15만 ⭐</div>
+            </button>
+            <button type="button" data-diff="CHAOS" class="diff-btn p-2.5 rounded-2xl border border-slate-700 bg-slate-950/70 text-left transition hover:border-amber-400/60">
+              <div class="text-base">🐉</div>
+              <div class="text-xs font-black text-amber-200">카오스</div>
+              <div class="text-[10px] text-slate-300">황금 리바이어던</div>
+              <div class="text-[10px] font-black text-amber-300 mt-1">40만 ⭐</div>
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-bold text-slate-300 mb-1.5">파티 정원 (4인 풀팟은 드롭률 +20%!)</label>
+          <div class="grid grid-cols-3 gap-2" id="sizeSelector">
+            <button type="button" data-size="2" class="size-btn py-2 rounded-xl border border-slate-700 bg-slate-950 text-xs font-black text-slate-300">2인팟</button>
+            <button type="button" data-size="3" class="size-btn py-2 rounded-xl border border-slate-700 bg-slate-950 text-xs font-black text-slate-300">3인팟</button>
+            <button type="button" data-size="4" class="size-btn py-2 rounded-xl border-2 border-amber-400 bg-amber-500/15 text-xs font-black text-amber-200">4인팟 ★</button>
+          </div>
+        </div>
+
+        <button type="button" id="btnCreateRoom" class="w-full py-3 rounded-2xl bg-gradient-to-r from-cyan-500 via-sky-500 to-indigo-500 hover:brightness-110 text-slate-950 font-black text-sm shadow-lg shadow-cyan-500/25 active:scale-[0.99] transition">
+          🔱 원정대 파티방 개설
+        </button>
+
+        <div class="rounded-2xl bg-slate-950/70 border border-slate-800 p-3 text-[11px] text-slate-300 space-y-1">
+          <div class="font-black text-cyan-300">💡 레이드 핵심 공략</div>
+          <div>• <b>1W (0~25초)</b>: 💣 폭탄복어(주변 광역폭발) 우선 조준 · ⚡ 전기해파리(감전) 회피!</div>
+          <div>• <b>2W (25~45초)</b>: 🧰 보물상자 격파 & 협동 <b>🔥 FEVER</b> 게이지로 작살 장전 가속!</div>
+          <div>• <b>3W (45~70초)</b>: 보스 🎯 <b>약점 과녁</b> 집중 타격 & 🛡️ <b>보호막 브레이크</b> 시 그로기 2배 딜!</div>
+        </div>
+      </div>
+
+      <!-- Active Party Rooms List -->
+      <div class="lg:col-span-7 rounded-3xl bg-slate-900/90 border border-slate-800 p-4 sm:p-5 shadow-xl flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-sm font-black text-white">📋 모집 중인 원정대 파티</div>
+          <span id="roomCountBadge" class="px-2.5 py-0.5 rounded-full bg-slate-800 text-[11px] font-bold text-slate-300">0개 방</span>
+        </div>
+        <div id="roomsListBox" class="flex-1 space-y-2.5 min-h-[260px]">
+          <div class="h-full flex flex-col items-center justify-center text-slate-500 text-xs py-12">
+            <div class="text-3xl mb-2">⚓</div>
+            <div>현재 모집 중인 파티가 없습니다. 왼쪽에서 새 원정대를 개설해보세요!</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= VIEW 2: PARTY WAITING ROOM ================= -->
+    <section id="viewWaiting" class="hidden flex-col gap-4 mt-1">
+      <div class="rounded-3xl bg-slate-900/95 border border-cyan-500/35 p-4 sm:p-5 shadow-2xl">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
+          <div class="flex items-center gap-2.5">
+            <span id="waitBossIcon" class="text-3xl">🐙</span>
+            <div>
+              <div class="flex items-center gap-2">
+                <span id="waitDiffBadge" class="px-2 py-0.5 rounded-lg bg-cyan-500/20 text-cyan-300 text-[11px] font-black">노말</span>
+                <h2 id="waitRoomTitle" class="text-base sm:text-lg font-black text-white">원정대</h2>
+              </div>
+              <div id="waitRoomMeta" class="text-[11px] text-slate-400 mt-0.5">출항비 50,000⭐ · 4인 풀팟 드롭률 +20%</div>
+            </div>
+          </div>
+          <button type="button" id="btnLeaveRoom" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-600/80 text-xs font-black text-slate-200 transition">🚪 파티 나가기</button>
+        </div>
+
+        <!-- Party Slots Grid -->
+        <div id="waitSlotsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 my-4"></div>
+
+        <!-- Action Buttons -->
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+          <div id="waitStatusHint" class="text-xs text-slate-400">최소 2명 이상 모여 파티원 모두가 준비 완료하면 파티장이 출항할 수 있습니다.</div>
+          <div class="flex items-center gap-2">
+            <button type="button" id="btnToggleReady" class="hidden px-6 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm shadow-lg transition">✅ 준비 완료</button>
+            <button type="button" id="btnStartRaid" class="hidden px-7 py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-400 to-rose-500 hover:brightness-110 text-slate-950 font-black text-sm shadow-xl active:scale-95 transition">⚓ 지금 출항!</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Party Chat -->
+      <div class="rounded-3xl bg-slate-900/90 border border-slate-800 p-4 flex flex-col gap-2">
+        <div class="text-xs font-black text-slate-300">💬 파티 대기실 채팅</div>
+        <div id="waitChatLog" class="h-36 overflow-y-auto rounded-2xl bg-slate-950/80 border border-slate-800 p-3 space-y-1 text-xs"></div>
+        <form id="waitChatForm" class="flex gap-2">
+          <input id="waitChatInput" type="text" maxlength="120" placeholder="파티원에게 메시지 보내기..." class="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400" />
+          <button type="submit" class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs">전송</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ================= VIEW 3: REAL-TIME HARPOON RAID ARENA ================= -->
+    <section id="viewArena" class="hidden flex-col gap-2.5">
+      <!-- Top Combat HUD -->
+      <div class="grid grid-cols-12 gap-2 items-center rounded-2xl bg-slate-900/95 border border-cyan-500/30 px-3 py-2">
+        <div class="col-span-4 sm:col-span-3 flex items-center gap-2">
+          <span id="hudWave" class="px-2.5 py-1 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-200 text-xs font-black">WAVE 1</span>
+          <span id="hudTimer" class="text-lg sm:text-xl font-black text-amber-300 tabular-nums">70.0s</span>
+        </div>
+        <div class="col-span-8 sm:col-span-5">
+          <div class="flex justify-between text-[10px] font-black mb-0.5">
+            <span id="hudFeverLabel" class="text-amber-300">🔥 파티 피버 게이지</span>
+            <span id="hudFeverPct" class="text-cyan-200">0%</span>
+          </div>
+          <div class="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden">
+            <div id="hudFeverBar" class="h-full bg-gradient-to-r from-cyan-400 via-amber-400 to-rose-500 transition-all duration-100" style="width:0%"></div>
+          </div>
+        </div>
+        <div class="col-span-12 sm:col-span-4 flex items-center justify-end gap-2 text-xs font-black">
+          <span id="hudMyDmg" class="px-2.5 py-1 rounded-xl bg-slate-800 text-sky-300">딜량 0</span>
+          <span id="hudMyGold" class="px-2.5 py-1 rounded-xl bg-slate-800 text-emerald-300">+0 ⭐</span>
+        </div>
+      </div>
+
+      <!-- Boss HP Bar (Wave 3) -->
+      <div id="bossHudWrap" class="hidden rounded-2xl bg-rose-950/60 border border-rose-500/50 px-3.5 py-2">
+        <div class="flex items-center justify-between text-xs font-black mb-1">
+          <span id="bossHudName" class="text-rose-200">🐙 대왕 크라켄</span>
+          <span id="bossHudState" class="text-amber-300"></span>
+          <span id="bossHudHpText" class="text-white tabular-nums">0 / 0</span>
+        </div>
+        <div class="w-full h-3.5 rounded-full bg-slate-900 overflow-hidden relative">
+          <div id="bossHudHpBar" class="h-full bg-gradient-to-r from-rose-600 via-pink-500 to-amber-400 transition-all duration-75" style="width:100%"></div>
+          <div id="bossHudShieldBar" class="hidden absolute inset-0 bg-cyan-400/75 transition-all duration-75" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- Event Banner -->
+      <div id="arenaBanner" class="hidden px-4 py-2 rounded-2xl bg-cyan-500/20 border border-cyan-400/50 text-center text-xs sm:text-sm font-black text-cyan-100"></div>
+
+      <!-- Canvas Stage -->
+      <div id="canvasWrap" class="relative w-full rounded-3xl overflow-hidden border-2 border-cyan-500/40 bg-slate-950 shadow-2xl">
+        <canvas id="raidCanvas" width="960" height="540" class="w-full aspect-[16/9] block cursor-crosshair"></canvas>
+      </div>
+      <div class="text-center text-[11px] text-slate-400">
+        🔱 목표를 <b>조준한 뒤 클릭/터치</b>하여 작살을 한 발씩 발사하세요! (포대 링이 가득 차면 발사 준비 완료)
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================= VIEW 4: RESULT MODAL ================= -->
+  <div id="resultModal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-3">
+    <div class="w-full max-w-xl rounded-3xl bg-slate-900 border border-amber-400/40 shadow-2xl p-5 flex flex-col gap-3 max-h-[90vh] overflow-y-auto">
+      <div class="text-center">
+        <div id="resIcon" class="text-4xl">🏆</div>
+        <h3 id="resTitle" class="text-xl font-black text-amber-300 mt-1">보스 토벌 성공!</h3>
+        <div id="resSub" class="text-xs text-slate-300 mt-0.5"></div>
+      </div>
+      <div id="resList" class="space-y-2"></div>
+      <div class="flex items-center justify-center gap-2 pt-2">
+        <button type="button" id="btnBackToWait" class="hidden px-5 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-500 text-slate-950 font-black text-xs">🔄 파티 대기실로 복귀</button>
+        <button type="button" id="btnExitToLobby" class="px-5 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-xs">🚪 원정대 로비로</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const socket = io();
+      let MY_NICK = '';
+      let MY_SAVE_CODE = '';
+      let selectedDiff = 'NORMAL';
+      let selectedSize = 4;
+      let currentRoom = null;
+      let latestSnap = null;
+      let snapReceivedAt = 0;
+      let aimX = 480;
+      let aimY = 220;
+      let lastAimEmit = 0;
+      let rafId = null;
+
+      function esc(v) {
+        return String(v || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      }
+
+      function showToast(msg) {
+        const el = document.getElementById('toastBox');
+        el.textContent = msg;
+        el.classList.remove('hidden');
+        clearTimeout(showToast._t);
+        showToast._t = setTimeout(() => el.classList.add('hidden'), 2800);
+      }
+
+      function showBanner(text, tone) {
+        const el = document.getElementById('arenaBanner');
+        el.textContent = text;
+        el.className = 'px-4 py-2 rounded-2xl text-center text-xs sm:text-sm font-black border ' + (
+          tone === 'danger' ? 'bg-rose-500/25 border-rose-400/60 text-rose-100' :
+          tone === 'gold' ? 'bg-amber-500/25 border-amber-400/60 text-amber-100' :
+          tone === 'warn' ? 'bg-orange-500/25 border-orange-400/60 text-orange-100' :
+          'bg-cyan-500/20 border-cyan-400/50 text-cyan-100'
+        );
+        clearTimeout(showBanner._t);
+        showBanner._t = setTimeout(() => el.classList.add('hidden'), 4200);
+      }
+
+      function setView(name) {
+        document.getElementById('viewLobby').classList.toggle('hidden', name !== 'lobby');
+        document.getElementById('viewWaiting').classList.toggle('hidden', name !== 'waiting');
+        document.getElementById('viewWaiting').classList.toggle('flex', name === 'waiting');
+        document.getElementById('viewArena').classList.toggle('hidden', name !== 'arena');
+        document.getElementById('viewArena').classList.toggle('flex', name === 'arena');
+        if (name === 'arena') {
+          startRenderLoop();
+        } else {
+          stopRenderLoop();
+        }
+      }
+
+      async function loadMyProfile() {
+        try {
+          if (window.ArcadeAuth && window.ArcadeAuth.getProfile) {
+            const p = await window.ArcadeAuth.getProfile();
+            if (p) {
+              MY_NICK = p.nickname || '';
+              MY_SAVE_CODE = p.save_code || '';
+            }
+          }
+          if (!MY_SAVE_CODE) {
+            MY_SAVE_CODE = localStorage.getItem('arcade_save_code') || '';
+            MY_NICK = localStorage.getItem('arcade_nickname') || MY_NICK;
+          }
+          const res = await fetch('/api/fishing-raid/me?nickname=' + encodeURIComponent(MY_NICK), {
+            headers: MY_SAVE_CODE ? { 'X-Save-Code': MY_SAVE_CODE } : {}
+          });
+          const d = await res.json();
+          if (d && d.ok) {
+            MY_NICK = d.nickname || MY_NICK;
+            document.getElementById('hdrGold').textContent = '⭐ ' + Number(d.gold || 0).toLocaleString();
+            document.getElementById('hdrQuota').textContent = `오늘 ${d.quota.remainingToday}/${d.quota.dailyLimit}회`;
+            const awTxt = d.rod.rodAwakening > 0 ? ` · ★${d.rod.rodAwakening}` : '';
+            document.getElementById('hdrRod').textContent = `🎣 +${d.rod.rodLevel}강${awTxt}`;
+          }
+        } catch (_) {}
+      }
+
+      document.querySelectorAll('.diff-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          selectedDiff = btn.dataset.diff;
+          document.querySelectorAll('.diff-btn').forEach((b) => {
+            const on = b.dataset.diff === selectedDiff;
+            b.className = 'diff-btn p-2.5 rounded-2xl text-left transition ' + (
+              on ? 'border-2 border-cyan-400 bg-cyan-500/15' : 'border border-slate-700 bg-slate-950/70 hover:border-slate-500'
+            );
+          });
+        });
+      });
+
+      document.querySelectorAll('.size-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          selectedSize = Number(btn.dataset.size) || 4;
+          document.querySelectorAll('.size-btn').forEach((b) => {
+            const on = Number(b.dataset.size) === selectedSize;
+            b.className = 'size-btn py-2 rounded-xl text-xs font-black transition ' + (
+              on ? 'border-2 border-amber-400 bg-amber-500/15 text-amber-200' : 'border border-slate-700 bg-slate-950 text-slate-300'
+            );
+          });
+        });
+      });
+
+      function renderRoomsList(rooms) {
+        const box = document.getElementById('roomsListBox');
+        document.getElementById('roomCountBadge').textContent = `${rooms.length}개 방`;
+        if (!rooms.length) {
+          box.innerHTML = `<div class="h-full flex flex-col items-center justify-center text-slate-500 text-xs py-12"><div class="text-3xl mb-2">⚓</div><div>현재 모집 중인 파티가 없습니다. 왼쪽에서 새 원정대를 개설해보세요!</div></div>`;
+          return;
+        }
+        box.innerHTML = rooms.map((r) => {
+          const isPlaying = r.status !== 'LOBBY';
+          const isFull = r.memberCount >= r.maxPlayers;
+          const badgeCls = r.difficulty === 'CHAOS' ? 'bg-amber-500/20 text-amber-300' : r.difficulty === 'HARD' ? 'bg-purple-500/20 text-purple-300' : 'bg-cyan-500/20 text-cyan-300';
+          return `
+            <div class="rounded-2xl bg-slate-950/80 border border-slate-800 hover:border-cyan-500/40 p-3.5 flex items-center justify-between gap-3 transition">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="text-2xl shrink-0">${r.bossIcon}</div>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="px-2 py-0.5 rounded-lg text-[10px] font-black ${badgeCls}">${esc(r.difficultyLabel)}</span>
+                    <span class="text-sm font-black text-white truncate">${esc(r.title)}</span>
+                  </div>
+                  <div class="text-[11px] text-slate-400 mt-0.5">
+                    파티장 ${esc(r.hostNickname)} · 출항비 ${Number(r.entryFee).toLocaleString()}⭐ · ${r.memberCount}/${r.maxPlayers}명
+                  </div>
+                </div>
+              </div>
+              <button type="button" data-join="${esc(r.id)}" ${isPlaying || isFull ? 'disabled' : ''} class="join-room-btn shrink-0 px-4 py-2 rounded-xl text-xs font-black transition ${
+                isPlaying ? 'bg-slate-800 text-slate-500 cursor-not-allowed' :
+                isFull ? 'bg-slate-800 text-slate-400 cursor-not-allowed' :
+                'bg-cyan-500 hover:bg-cyan-400 text-slate-950'
+              }">${isPlaying ? '출항 중' : isFull ? '정원 마감' : '참가하기'}</button>
+            </div>
+          `;
+        }).join('');
+
+        box.querySelectorAll('.join-room-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            socket.emit('fr_join_room', { save_code: MY_SAVE_CODE, roomId: btn.dataset.join }, (resp) => {
+              if (!resp || !resp.ok) return showToast('⚠️ ' + ((resp && resp.error) || '입장 실패'));
+              currentRoom = resp.room;
+              renderWaitingRoom(currentRoom);
+              setView('waiting');
+            });
+          });
+        });
+      }
+
+      function renderWaitingRoom(room) {
+        if (!room) return;
+        const diff = room.difficultyMeta || {};
+        document.getElementById('waitBossIcon').textContent = diff.bossIcon || '🐙';
+        document.getElementById('waitDiffBadge').textContent = diff.label || room.difficulty;
+        document.getElementById('waitRoomTitle').textContent = room.title;
+        document.getElementById('waitRoomMeta').textContent = `${diff.bossName || ''} · 출항비 ${Number(diff.entryFee || 0).toLocaleString()}⭐ · ${room.members.length}/${room.maxPlayers}명`;
+
+        const petIcons = { pet_cat: '🐱', pet_dolphin: '🐬', pet_jellyfish: '🪼', pet_dragon: '🐉' };
+        const slots = [];
+        for (let i = 0; i < room.maxPlayers; i++) {
+          const m = room.members[i];
+          if (m) {
+            const pet = m.cosmetics && m.cosmetics.fishingPet ? (petIcons[m.cosmetics.fishingPet] || '') : '';
+            const title = m.cosmetics && m.cosmetics.title ? `<span class="text-[10px] text-amber-300">[${esc(m.cosmetics.title)}]</span> ` : '';
+            const col = (m.cosmetics && m.cosmetics.color) || '#ffffff';
+            slots.push(`
+              <div class="rounded-2xl bg-slate-950/90 border ${m.ready ? 'border-emerald-400/60' : 'border-slate-700'} p-3.5 flex flex-col justify-between gap-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] font-black px-2 py-0.5 rounded-lg ${m.isHost ? 'bg-amber-500/20 text-amber-300' : m.ready ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'}">
+                    ${m.isHost ? '👑 파티장' : m.ready ? '✅ 준비 완료' : '⏳ 대기 중'}
+                  </span>
+                  <span class="text-xs font-black text-indigo-300">🎣 +${m.rodLevel}강${m.rodAwakening > 0 ? ' ★' + m.rodAwakening : ''}</span>
+                </div>
+                <div class="text-sm font-black truncate" style="color:${col}">${title}${esc(m.nickname)} ${pet}</div>
+                <div class="text-[11px] text-slate-400 flex justify-between">
+                  <span>남은 횟수 ${m.remainingToday}/3</span>
+                  <span>⭐ ${Number(m.gold || 0).toLocaleString()}</span>
+                </div>
+              </div>
+            `);
+          } else {
+            slots.push(`
+              <div class="rounded-2xl border-2 border-dashed border-slate-800 bg-slate-950/40 p-3.5 flex flex-col items-center justify-center text-slate-600 text-xs min-h-[100px]">
+                <div class="text-xl mb-1">➕</div>
+                <div>파티원 대기 중 (${i + 1}번 자리)</div>
+              </div>
+            `);
+          }
+        }
+        document.getElementById('waitSlotsGrid').innerHTML = slots.join('');
+
+        const isHost = room.hostSocketId === socket.id;
+        const me = room.members.find((m) => m.socketId === socket.id);
+        const btnStart = document.getElementById('btnStartRaid');
+        const btnReady = document.getElementById('btnToggleReady');
+        btnStart.classList.toggle('hidden', !isHost);
+        btnReady.classList.toggle('hidden', isHost);
+
+        if (isHost) {
+          const canLaunch = room.members.length >= 2 && room.members.every((m) => m.isHost || m.ready);
+          btnStart.disabled = !canLaunch;
+          if (room.members.length < 2) {
+            btnStart.textContent = '⚓ 출항하기 (2명 이상 필요)';
+            btnStart.className = 'px-7 py-3 rounded-2xl bg-slate-700 text-slate-400 font-black text-sm cursor-not-allowed';
+          } else if (!canLaunch) {
+            btnStart.textContent = '⏳ 파티원 준비 대기 중...';
+            btnStart.className = 'px-7 py-3 rounded-2xl bg-slate-700 text-slate-300 font-black text-sm cursor-not-allowed';
+          } else {
+            btnStart.textContent = '⚓ 지금 출항!';
+            btnStart.className = 'px-7 py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-400 to-rose-500 hover:brightness-110 text-slate-950 font-black text-sm shadow-xl active:scale-95 transition';
+          }
+        }
+
+        if (me && !isHost) {
+          btnReady.textContent = me.ready ? '⏳ 준비 취소' : '✅ 준비 완료';
+          btnReady.className = 'px-6 py-3 rounded-2xl font-black text-sm shadow-lg transition ' + (
+            me.ready ? 'bg-slate-700 hover:bg-slate-600 text-slate-100' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+          );
+        }
+
+        const log = document.getElementById('waitChatLog');
+        log.innerHTML = (room.chat || []).map((c) => `<div><b class="text-cyan-300">${esc(c.nickname)}</b>: <span class="text-slate-200">${esc(c.text)}</span></div>`).join('');
+        log.scrollTop = log.scrollHeight;
+      }
+
+      document.getElementById('btnCreateRoom').addEventListener('click', () => {
+        const title = document.getElementById('inpRoomTitle').value.trim();
+        socket.emit('fr_create_room', { save_code: MY_SAVE_CODE, title, difficulty: selectedDiff, maxPlayers: selectedSize }, (resp) => {
+          if (!resp || !resp.ok) return showToast('⚠️ ' + ((resp && resp.error) || '방 생성 실패'));
+          currentRoom = resp.room;
+          renderWaitingRoom(currentRoom);
+          setView('waiting');
+        });
+      });
+
+      document.getElementById('btnLeaveRoom').addEventListener('click', () => {
+        socket.emit('fr_leave_room', {}, () => {
+          currentRoom = null;
+          setView('lobby');
+          loadMyProfile();
+        });
+      });
+
+      document.getElementById('btnToggleReady').addEventListener('click', () => {
+        socket.emit('fr_toggle_ready', {});
+      });
+
+      document.getElementById('btnStartRaid').addEventListener('click', () => {
+        socket.emit('fr_start_raid', {}, (resp) => {
+          if (!resp || !resp.ok) showToast('⚠️ ' + ((resp && resp.error) || '출항할 수 없습니다.'));
+        });
+      });
+
+      document.getElementById('waitChatForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const inp = document.getElementById('waitChatInput');
+        const txt = inp.value.trim();
+        if (!txt) return;
+        socket.emit('fr_chat', { text: txt });
+        inp.value = '';
+      });
+
+      document.getElementById('btnBackToWait').addEventListener('click', () => {
+        socket.emit('fr_reset_room', {}, (resp) => {
+          if (resp && resp.ok) {
+            document.getElementById('resultModal').classList.add('hidden');
+            setView('waiting');
+          }
+        });
+      });
+
+      document.getElementById('btnExitToLobby').addEventListener('click', () => {
+        document.getElementById('resultModal').classList.add('hidden');
+        socket.emit('fr_leave_room', {}, () => {
+          currentRoom = null;
+          setView('lobby');
+          loadMyProfile();
+        });
+      });
+
+      // ================= SINGLE-SHOT HARPOON AIM & FIRE =================
+      const cv = document.getElementById('raidCanvas');
+      const ctx = cv.getContext('2d');
+
+      function updateAimFromEvent(e) {
+        const rect = cv.getBoundingClientRect();
+        aimX = Math.max(10, Math.min(950, ((e.clientX - rect.left) / rect.width) * 960));
+        aimY = Math.max(10, Math.min(430, ((e.clientY - rect.top) / rect.height) * 540));
+        const now = performance.now();
+        if (currentRoom && currentRoom.status === 'PLAYING' && now - lastAimEmit > 75) {
+          lastAimEmit = now;
+          socket.emit('fr_aim', { x: Math.round(aimX), y: Math.round(aimY) });
+        }
+      }
+
+      // Single aimed harpoon shot per click/tap!
+      cv.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        updateAimFromEvent(e);
+        if (!currentRoom || currentRoom.status !== 'PLAYING') return;
+        socket.emit('fr_shoot', { x: Math.round(aimX), y: Math.round(aimY) });
+      });
+      cv.addEventListener('pointermove', (e) => {
+        updateAimFromEvent(e);
+      });
+
+      // ================= 60 FPS INTERPOLATED CANVAS RENDER =================
+      const bubbles = Array.from({ length: 24 }, () => ({
+        x: Math.random() * 960,
+        y: Math.random() * 440,
+        r: 2 + Math.random() * 4,
+        vy: 18 + Math.random() * 32
+      }));
+
+      function drawHarpoonSpear(ctx, ox, oy, hx, hy, ang, isCrit, col) {
+        // 1) Taut steel cable from boat turret to harpoon tail
+        ctx.save();
+        ctx.strokeStyle = isCrit ? 'rgba(250, 204, 21, 0.72)' : 'rgba(226, 232, 240, 0.55)';
+        ctx.lineWidth = isCrit ? 2.4 : 1.8;
+        ctx.beginPath();
+        ctx.moveTo(ox, oy);
+        ctx.lineTo(hx, hy);
+        ctx.stroke();
+
+        // 2) Harpoon shaft & barbed spearhead
+        ctx.translate(hx, hy);
+        ctx.rotate(ang);
+        ctx.shadowColor = col || '#38bdf8';
+        ctx.shadowBlur = isCrit ? 16 : 9;
+
+        // Shaft
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.moveTo(-26, 0);
+        ctx.lineTo(6, 0);
+        ctx.stroke();
+
+        // Barbed spearhead
+        ctx.fillStyle = col || '#38bdf8';
+        ctx.beginPath();
+        ctx.moveTo(16, 0);
+        ctx.lineTo(1, -8);
+        ctx.lineTo(5, 0);
+        ctx.lineTo(1, 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawArena(now) {
+        const W = 960, H = 540;
+        const snap = latestSnap;
+        const isFever = snap && snap.ft > 0;
+        // Smooth 60fps extrapolation delta since last 30Hz snapshot
+        const dtSnap = snap ? Math.min(0.065, Math.max(0, (now - snapReceivedAt) / 1000)) : 0;
+
+        // Ocean gradient
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        if (isFever) {
+          grad.addColorStop(0, '#0f172a');
+          grad.addColorStop(0.5, '#1e1b4b');
+          grad.addColorStop(1, '#0c4a6e');
+        } else {
+          grad.addColorStop(0, '#041226');
+          grad.addColorStop(0.55, '#082f49');
+          grad.addColorStop(1, '#020617');
+        }
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+
+        // Animated light rays
+        ctx.save();
+        ctx.fillStyle = isFever ? 'rgba(250, 204, 21, 0.06)' : 'rgba(56, 189, 248, 0.045)';
+        for (let i = 0; i < 5; i++) {
+          const rx = 100 + i * 200 + Math.sin(now * 0.0008 + i) * 35;
+          ctx.beginPath();
+          ctx.moveTo(rx - 30, 0);
+          ctx.lineTo(rx + 45, 0);
+          ctx.lineTo(rx + 120, 440);
+          ctx.lineTo(rx - 90, 440);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // Bubbles
+        ctx.fillStyle = 'rgba(186, 230, 253, 0.18)';
+        for (const b of bubbles) {
+          b.y -= b.vy * 0.016;
+          if (b.y < -10) { b.y = 440; b.x = Math.random() * W; }
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        if (snap) {
+          // 1) Fish entities: [id, kind, icon, x, y, vx, r, hp, maxHp, color]
+          for (const e of (snap.e || [])) {
+            const [, kind, icon, rawX, y, vx, r, hp, maxHp, color] = e;
+            const x = rawX + vx * dtSnap;
+            const dir = vx >= 0 ? 1 : -1;
+            ctx.save();
+            ctx.translate(x, y);
+            if (kind === 'bomb_puffer') {
+              ctx.fillStyle = 'rgba(244, 63, 94, 0.22)';
+              ctx.beginPath();
+              ctx.arc(0, 0, r + 6 + Math.sin(now * 0.012) * 3, 0, Math.PI * 2);
+              ctx.fill();
+            } else if (kind === 'jelly') {
+              ctx.fillStyle = 'rgba(34, 211, 238, 0.18)';
+              ctx.beginPath();
+              ctx.arc(0, 0, r + 5, 0, Math.PI * 2);
+              ctx.fill();
+            } else if (kind === 'chest') {
+              ctx.fillStyle = 'rgba(250, 204, 21, 0.22)';
+              ctx.beginPath();
+              ctx.arc(0, 0, r + 7, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.scale(dir > 0 ? -1 : 1, 1);
+            ctx.font = `${Math.round(r * 1.45)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(icon, 0, 2);
+            ctx.restore();
+
+            if (hp < maxHp) {
+              const bw = r * 1.6;
+              ctx.fillStyle = 'rgba(15,23,42,0.8)';
+              ctx.fillRect(x - bw / 2, y - r - 10, bw, 5);
+              ctx.fillStyle = color || '#38bdf8';
+              ctx.fillRect(x - bw / 2, y - r - 10, bw * Math.max(0, hp / maxHp), 5);
+            }
+          }
+
+          // 2) Boss (smooth extrapolated x)
+          if (snap.b) {
+            const b = snap.b;
+            const bx = b.x + (b.vx || 0) * dtSnap;
+            const by = b.y;
+            const wx = b.wx + (b.vx || 0) * dtSnap;
+            const wy = b.wy;
+
+            ctx.save();
+            ctx.translate(bx, by);
+            ctx.fillStyle = b.grT > 0 ? 'rgba(250, 204, 21, 0.25)' : 'rgba(244, 63, 94, 0.2)';
+            ctx.beginPath();
+            ctx.arc(0, 0, b.r + 14 + Math.sin(now * 0.008) * 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (b.shT > 0 && b.sh > 0) {
+              ctx.strokeStyle = '#38bdf8';
+              ctx.lineWidth = 6;
+              ctx.shadowColor = '#38bdf8';
+              ctx.shadowBlur = 18;
+              ctx.beginPath();
+              ctx.arc(0, 0, b.r + 18, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.shadowBlur = 0;
+            }
+
+            ctx.font = '104px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(b.icon, 0, 4);
+
+            if (b.grT > 0) {
+              ctx.font = 'bold 16px sans-serif';
+              ctx.fillStyle = '#fde047';
+              ctx.fillText('💫 GROGGY! (2배 딜!)', 0, -b.r - 18);
+            }
+            ctx.restore();
+
+            if (b.shT <= 0) {
+              ctx.save();
+              ctx.strokeStyle = '#ef4444';
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.arc(wx, wy, b.wr + Math.sin(now * 0.015) * 3, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.fillStyle = 'rgba(239, 68, 68, 0.28)';
+              ctx.fill();
+              ctx.fillStyle = '#fef08a';
+              ctx.font = 'bold 11px sans-serif';
+              ctx.textAlign = 'center';
+              ctx.fillText('WEAK ×1.7', wx, wy + 4);
+              ctx.restore();
+            }
+          }
+
+          // 3) Dotted aiming line from MY fixed turret x to cursor
+          const players = snap.pl || [];
+          const myPl = players.find((p) => p.nick === MY_NICK);
+          if (myPl) {
+            ctx.save();
+            ctx.setLineDash([7, 7]);
+            ctx.strokeStyle = myPl.cd >= 1 ? 'rgba(250, 204, 21, 0.48)' : 'rgba(148, 163, 184, 0.28)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(myPl.x, 472);
+            ctx.lineTo(aimX, aimY);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // 4) Flying Harpoons with taut tether cables: [x, y, vx, vy, ox, oy, ang, isCrit, color]
+          for (const p of (snap.p || [])) {
+            const [rawX, rawY, vx, vy, ox, oy, ang, isCrit, col] = p;
+            const hx = rawX + vx * dtSnap;
+            const hy = rawY + vy * dtSnap;
+            drawHarpoonSpear(ctx, ox, oy, hx, hy, ang, isCrit === 1, col);
+          }
+
+          // 5) Floating effects
+          for (const fx of (snap.fx || [])) {
+            const [x, y, text, col, blast] = fx;
+            if (blast) {
+              ctx.strokeStyle = 'rgba(251, 113, 133, 0.55)';
+              ctx.lineWidth = 4;
+              ctx.beginPath();
+              ctx.arc(x, y, 120, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+            ctx.font = 'bold 15px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = col || '#ffffff';
+            ctx.fillText(text, x, y);
+          }
+
+          // 6) Boat deck & FIXED-POSITION party harpoon launchers
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(0, 442, W, 98);
+          ctx.strokeStyle = isFever ? '#facc15' : '#0284c7';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(0, 442);
+          ctx.lineTo(W, 442);
+          ctx.stroke();
+
+          const petIcons = { pet_cat: '🐱', pet_dolphin: '🐬', pet_jellyfish: '🪼', pet_dragon: '🐉' };
+
+          players.forEach((pl) => {
+            // ALWAYS use server's fixed pl.x so disconnects never shift remaining turrets!
+            const sx = pl.x;
+            const sy = 472;
+            const col = pl.col || '#38bdf8';
+            const pet = pl.pet ? (petIcons[pl.pet] || '') : '';
+            const isMe = pl.nick === MY_NICK;
+            const drawAng = isMe ? Math.atan2(aimY - sy, aimX - sx) : (pl.ang || -Math.PI / 2);
+
+            // Harpoon launcher rail & loaded spearhead
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.rotate(drawAng);
+            ctx.fillStyle = '#334155';
+            ctx.fillRect(-4, -7, 34, 14);
+            ctx.fillStyle = col;
+            ctx.fillRect(0, -3, 32, 6);
+            if (pl.cd >= 0.95) {
+              // Loaded spear tip protruding from launcher
+              ctx.fillStyle = '#f8fafc';
+              ctx.beginPath();
+              ctx.moveTo(46, 0);
+              ctx.lineTo(31, -7);
+              ctx.lineTo(34, 0);
+              ctx.lineTo(31, 7);
+              ctx.closePath();
+              ctx.fill();
+            }
+            ctx.restore();
+
+            // Base & Reload progress ring
+            ctx.fillStyle = '#1e293b';
+            ctx.beginPath();
+            ctx.arc(sx, sy, 21, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(100,116,139,0.4)';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 21, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.strokeStyle = pl.stun > 0 ? '#22d3ee' : (pl.cd >= 1 ? '#34d399' : col);
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 21, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, pl.cd || 0));
+            ctx.stroke();
+
+            if (pet) {
+              ctx.font = '18px sans-serif';
+              ctx.textAlign = 'center';
+              ctx.fillText(pet, sx - 36, sy + 6);
+            }
+
+            if (pl.stun > 0) {
+              ctx.fillStyle = '#22d3ee';
+              ctx.font = 'bold 12px sans-serif';
+              ctx.textAlign = 'center';
+              ctx.fillText(`⚡감전 ${pl.stun}s`, sx, sy - 28);
+            }
+
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.fillStyle = isMe ? '#fde047' : '#f8fafc';
+            ctx.fillText(pl.nick, sx, 511);
+            ctx.font = '11px sans-serif';
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillText(`딜 ${pl.dmg.toLocaleString()} · +${pl.gold.toLocaleString()}⭐`, sx, 527);
+          });
+
+          // 7) Boss Ink Splash
+          if (snap.b && snap.b.inkT > 0) {
+            ctx.fillStyle = 'rgba(2, 6, 23, 0.72)';
+            ctx.fillRect(0, 0, W, 442);
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = 'bold 26px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`🦑 먹물 시야 방해! (${snap.b.inkT}s)`, W / 2, 220);
+          }
+        }
+
+        // Crosshair at aimX, aimY
+        ctx.save();
+        ctx.strokeStyle = 'rgba(250, 204, 21, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(aimX, aimY, 15, 0, Math.PI * 2);
+        ctx.moveTo(aimX - 22, aimY); ctx.lineTo(aimX + 22, aimY);
+        ctx.moveTo(aimX, aimY - 22); ctx.lineTo(aimX, aimY + 22);
+        ctx.stroke();
+        ctx.restore();
+
+        rafId = requestAnimationFrame(drawArena);
+      }
+
+      function startRenderLoop() {
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(drawArena);
+      }
+
+      function stopRenderLoop() {
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      }
+
+      // ================= SOCKET LISTENERS =================
+      socket.on('connect', () => {
+        socket.emit('fr_enter_lobby');
+      });
+      if (socket.connected) socket.emit('fr_enter_lobby');
+
+      socket.on('fr_rooms_list', ({ rooms } = {}) => {
+        renderRoomsList(rooms || []);
+      });
+
+      socket.on('fr_room_state', (room) => {
+        currentRoom = room;
+        if (room.status === 'PLAYING') {
+          setView('arena');
+        } else if (room.status === 'LOBBY') {
+          document.getElementById('resultModal').classList.add('hidden');
+          renderWaitingRoom(room);
+          setView('waiting');
+        } else if (room.status === 'RESULT') {
+          renderWaitingRoom(room);
+        }
+      });
+
+      socket.on('fr_chat_message', (msg) => {
+        const log = document.getElementById('waitChatLog');
+        const div = document.createElement('div');
+        div.innerHTML = `<b class="text-cyan-300">${esc(msg.nickname)}</b>: <span class="text-slate-200">${esc(msg.text)}</span>`;
+        log.appendChild(div);
+        log.scrollTop = log.scrollHeight;
+      });
+
+      socket.on('fr_banner', ({ text, tone } = {}) => {
+        if (text) showBanner(text, tone);
+      });
+
+      socket.on('fr_snapshot', (snap) => {
+        latestSnap = snap;
+        snapReceivedAt = performance.now();
+        document.getElementById('hudWave').textContent = `WAVE ${snap.w}`;
+        document.getElementById('hudTimer').textContent = `${Number(snap.t).toFixed(1)}s`;
+        const wrap = document.getElementById('canvasWrap');
+        if (snap.ft > 0) {
+          document.getElementById('hudFeverLabel').textContent = `🔥 FEVER 발동 중! (${snap.ft}s)`;
+          document.getElementById('hudFeverPct').textContent = 'MAX!';
+          document.getElementById('hudFeverBar').style.width = '100%';
+          wrap.classList.add('fever-glow');
+        } else {
+          document.getElementById('hudFeverLabel').textContent = '🔥 파티 피버 게이지';
+          document.getElementById('hudFeverPct').textContent = `${snap.fg}%`;
+          document.getElementById('hudFeverBar').style.width = `${snap.fg}%`;
+          wrap.classList.remove('fever-glow');
+        }
+
+        const myPl = (snap.pl || []).find((p) => p.nick === MY_NICK);
+        if (myPl) {
+          document.getElementById('hudMyDmg').textContent = `딜량 ${myPl.dmg.toLocaleString()}`;
+          document.getElementById('hudMyGold').textContent = `+${myPl.gold.toLocaleString()} ⭐`;
+        }
+
+        const bWrap = document.getElementById('bossHudWrap');
+        if (snap.b) {
+          bWrap.classList.remove('hidden');
+          document.getElementById('bossHudName').textContent = `${snap.b.icon} ${snap.b.name}`;
+          document.getElementById('bossHudHpText').textContent = `${snap.b.hp.toLocaleString()} / ${snap.b.maxHp.toLocaleString()}`;
+          document.getElementById('bossHudHpBar').style.width = `${Math.max(0, (snap.b.hp / snap.b.maxHp) * 100)}%`;
+          const shBar = document.getElementById('bossHudShieldBar');
+          if (snap.b.shT > 0 && snap.b.sh > 0) {
+            shBar.classList.remove('hidden');
+            shBar.style.width = `${Math.max(0, (snap.b.sh / snap.b.shMax) * 100)}%`;
+            document.getElementById('bossHudState').textContent = `🛡️ 보호막 ${snap.b.shT}s`;
+          } else {
+            shBar.classList.add('hidden');
+            document.getElementById('bossHudState').textContent = snap.b.grT > 0 ? `💫 그로기 ${snap.b.grT}s (2배 딜!)` : '🎯 약점 조준!';
+          }
+        } else {
+          bWrap.classList.add('hidden');
+        }
+      });
+
+      socket.on('fr_raid_result', (res) => {
+        stopRenderLoop();
+        loadMyProfile();
+        if (window.ArcadeEconomy && window.ArcadeEconomy.refresh) window.ArcadeEconomy.refresh(null, true);
+
+        document.getElementById('resIcon').textContent = res.bossDefeated ? '🏆' : '⏱️';
+        document.getElementById('resTitle').textContent = res.bossDefeated ? `${res.bossIcon} ${res.bossName} 토벌 성공!` : '타임오버 · 어군 수익 정산';
+        document.getElementById('resSub').textContent = `[${res.difficultyLabel}] 소요 시간 ${res.elapsedSec}초` + (res.fullPartyBonus ? ' · 🎉 4인 풀팟 드롭률 +20% 적용!' : '');
+
+        document.getElementById('resList').innerHTML = (res.results || []).map((r, i) => `
+          <div class="rounded-2xl bg-slate-950/90 border ${r.isMvp ? 'border-amber-400/70' : 'border-slate-800'} p-3 flex flex-col gap-1">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5 font-black text-sm text-white">
+                <span>${i + 1}위</span>
+                ${r.isMvp ? '<span class="px-2 py-0.5 rounded-lg bg-amber-400 text-slate-950 text-[10px]">👑 MVP</span>' : ''}
+                <span>${esc(r.nickname)}</span>
+                <span class="text-[11px] text-indigo-300">(+${r.rodLevel}강)</span>
+              </div>
+              <div class="text-sm font-black text-emerald-300">+${Number(r.totalGold).toLocaleString()} ⭐</div>
+            </div>
+            <div class="text-[11px] text-slate-400 flex flex-wrap justify-between gap-1">
+              <span>누적 딜 ${Number(r.damage).toLocaleString()} (${r.damagePct}%) · 처치 ${r.kills}마리</span>
+              <span>어군 ${Number(r.waveGold).toLocaleString()} + 토벌 ${Number(r.clearGold).toLocaleString()}${r.mvpGold > 0 ? ' + MVP ' + Number(r.mvpGold).toLocaleString() : ''}</span>
+            </div>
+            ${r.drops && r.drops.length ? `<div class="text-[11px] font-black text-amber-300 mt-0.5">🎁 획득: ${r.drops.join(' · ')}</div>` : ''}
+          </div>
+        `).join('');
+
+        const isHost = currentRoom && currentRoom.hostSocketId === socket.id;
+        document.getElementById('btnBackToWait').classList.toggle('hidden', !isHost);
+        document.getElementById('resultModal').classList.remove('hidden');
+      });
+
+      loadMyProfile();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>로얄 블랙잭 | 웹 미니게임즈</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared/auth-client.js?v=1.7.1"></script>
+  <script src="/shared/admin-panel.js?v=1.7.1"></script>
+  <style>
+    body { background: radial-gradient(circle at top, #0a251d 0%, #070b14 60%); color: #f8fafc; font-family: 'Pretendard', system-ui, sans-serif; }
+    .felt-table { background: radial-gradient(ellipse at center, #0e3b2e 0%, #07221b 75%); }
+    .playing-card {
+      width: 68px; height: 98px;
+      border-radius: 11px;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+      transition: transform 0.2s ease;
+    }
+    @media (min-width: 640px) {
+      .playing-card { width: 80px; height: 114px; border-radius: 12px; }
+    }
+    .playing-card-mini {
+      width: 34px; height: 48px;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .card-back {
+      background: repeating-linear-gradient(45deg, #1e293b, #1e293b 5px, #334155 5px, #334155 10px);
+      border: 2px solid #94a3b8;
+    }
+    @keyframes cardPopIn {
+      0% { opacity: 0; transform: scale(0.75) translateY(-10px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .card-enter { animation: cardPopIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+    .flying-card {
+      position: fixed;
+      z-index: 60;
+      width: 54px;
+      height: 78px;
+      border-radius: 9px;
+      pointer-events: none;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.6);
+      transition: transform 0.52s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.52s ease;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center px-3 py-4">
+  <div class="w-full max-w-3xl space-y-4">
+    <!-- Top Header -->
+    <div class="flex items-center justify-between gap-2 bg-[#0d1322]/90 border border-[#232f52] rounded-2xl px-4 py-3 shadow-xl">
+      <div>
+        <h1 class="text-lg sm:text-xl font-black text-white flex items-center gap-1.5">🃏 로얄 블랙잭</h1>
+        <p class="text-[11px] text-emerald-300/90 font-semibold">6덱 · 블랙잭 1.5배 · 더블다운 · 스플릿 · 서렌더</p>
+      </div>
+      <a href="/" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 shrink-0">🏠 로비</a>
+    </div>
+
+    <div id="toastBox" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900/95 border border-amber-400/50 text-amber-300 text-xs font-black shadow-2xl"></div>
+
+    <!-- Center Round Settlement Popup -->
+    <div id="settlementPopup" class="hidden fixed inset-0 z-40 flex items-center justify-center px-4 bg-black/55 backdrop-blur-[2px]">
+      <div id="settlementPopupCard" class="w-full max-w-xs rounded-3xl bg-[#0d1322] border-2 border-amber-400/70 p-6 text-center shadow-2xl space-y-2.5">
+        <div id="settlementPopupTitle" class="text-xl font-black text-amber-300"></div>
+        <div id="settlementPopupNet" class="text-3xl font-black tracking-tight"></div>
+        <div id="settlementPopupSub" class="text-xs font-bold text-slate-300"></div>
+        <button id="btnCloseSettlementPopup" type="button" class="mt-2 px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-extrabold text-slate-200">확인</button>
+      </div>
+    </div>
+
+    <!-- LOBBY VIEW -->
+    <div id="viewLobby" class="space-y-4">
+      <div class="p-4 rounded-2xl bg-[#0e1526] border border-[#232f52] space-y-3 shadow-xl">
+        <div class="text-xs font-black text-emerald-300">👑 새 블랙잭 테이블 만들기</div>
+        <form id="createForm" class="space-y-2.5">
+          <div class="flex gap-2">
+            <input id="roomTitleInput" type="text" maxlength="24" placeholder="방 제목 (예: 한판 승부 블랙잭)" class="flex-1 min-w-0 bg-[#080c17] border border-[#1f2942] rounded-xl px-3 py-2 text-xs font-bold text-white placeholder-slate-500 outline-none focus:border-emerald-400" />
+            <input id="roomPwInput" type="password" inputmode="numeric" maxlength="4" placeholder="비번(4자리)" class="w-24 bg-[#080c17] border border-[#1f2942] rounded-xl px-2.5 py-2 text-xs font-bold text-center text-white placeholder-slate-500 outline-none focus:border-emerald-400" />
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="block text-[10px] font-bold text-amber-300 mb-1">⭐ 칩 연동</label>
+              <div class="w-full bg-[#080c17] border border-amber-400/40 rounded-xl px-2 py-1.5 text-[11px] font-black text-amber-300 text-center">계정 스타 1:1</div>
+              <input id="startingChipsSelect" type="hidden" value="3000" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-slate-400 mb-1">진행 판 수</label>
+              <select id="totalRoundsSelect" class="w-full bg-[#080c17] border border-[#1f2942] rounded-xl px-2 py-1.5 text-xs font-bold text-white outline-none">
+                <option value="0" selected>무제한</option>
+                <option value="5">5판 승부</option>
+                <option value="10">10판 승부</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-slate-400 mb-1">배팅 시간</label>
+              <select id="betTimerSelect" class="w-full bg-[#080c17] border border-[#1f2942] rounded-xl px-2 py-1.5 text-xs font-bold text-white outline-none">
+                <option value="15">15초</option>
+                <option value="20" selected>20초</option>
+                <option value="30">30초</option>
+                <option value="0">무제한</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg transition">🃏 테이블 열기</button>
+        </form>
+      </div>
+
+      <div class="p-4 rounded-2xl bg-[#0e1526] border border-[#232f52] space-y-2.5 shadow-xl">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-extrabold text-slate-300">🚪 열린 테이블 목록</span>
+          <span id="roomCountBadge" class="font-bold text-emerald-400">0개</span>
+        </div>
+        <div id="roomsList" class="space-y-2 max-h-72 overflow-y-auto"></div>
+      </div>
+    </div>
+
+    <!-- TABLE GAME VIEW -->
+    <div id="viewGame" class="hidden space-y-3">
+      <!-- Room Info Bar -->
+      <div class="flex items-center justify-between gap-2 bg-[#0d1322] border border-[#232f52] rounded-2xl px-3.5 py-2.5">
+        <div class="min-w-0">
+          <div id="gameRoomTitle" class="text-sm font-black text-white truncate"></div>
+          <div id="gameRoomSub" class="text-[11px] text-slate-400"></div>
+        </div>
+        <button id="btnLeaveRoom" type="button" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 shrink-0">🚪 나가기</button>
+      </div>
+
+      <!-- Casino Felt Table (Zero-Scroll Compact Layout) -->
+      <div class="felt-table border-2 border-emerald-500/30 rounded-3xl p-3 sm:p-4 shadow-2xl space-y-2.5">
+        <!-- Top Status + Timer -->
+        <div class="flex items-center justify-between gap-2 text-xs">
+          <span id="roundBadge" class="px-2.5 py-0.5 rounded-full bg-black/40 border border-emerald-400/30 font-black text-emerald-300">대기 중</span>
+          <span id="timerBadge" class="hidden px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 font-black text-amber-300">⏱️ 0초</span>
+          <div id="shoeDeckAnchor" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-xl bg-black/40 border border-emerald-400/30">
+            <span class="inline-block w-3.5 h-4 rounded-sm card-back shadow"></span>
+            <span id="shoeBadge" class="text-[11px] font-black text-emerald-200">슈: 312장</span>
+          </div>
+        </div>
+
+        <!-- Other Players Horizontal Strip (Fixed height, never pushes screen down) -->
+        <div id="otherPlayersStrip" class="hidden flex gap-1.5 overflow-x-auto pb-1"></div>
+
+        <!-- Dealer Zone -->
+        <div class="p-2.5 rounded-2xl bg-black/30 border border-emerald-400/20 text-center space-y-1.5">
+          <div class="flex items-center justify-center gap-2">
+            <span class="text-xs font-black text-amber-300">🎩 딜러 (17 이상 스탠드)</span>
+            <span id="dealerScoreBadge" class="px-2 py-0.5 rounded-lg bg-slate-900/90 border border-slate-700 text-xs font-black text-white">-</span>
+          </div>
+          <div id="dealerCards" class="flex justify-center flex-wrap gap-1.5 min-h-[98px] sm:min-h-[114px] items-center"></div>
+        </div>
+
+        <!-- Table Log -->
+        <div id="tableLogText" class="text-center text-xs font-extrabold text-amber-200 bg-black/40 border border-emerald-400/20 rounded-xl px-3 py-1.5 truncate"></div>
+
+        <!-- Focused Player Zone (Always shows Active Turn player or Myself) -->
+        <div id="playersGrid" class="space-y-2"></div>
+      </div>
+
+      <!-- Host Start / Next Round Controls -->
+      <div id="hostControlsBox" class="hidden p-3 rounded-2xl bg-[#0d1322] border border-emerald-500/30 flex items-center justify-between gap-2">
+        <span id="hostPromptText" class="text-xs font-bold text-slate-300">방장이 다음 라운드를 시작할 수 있습니다.</span>
+        <button id="btnStartRound" type="button" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shrink-0 shadow">🚀 라운드 시작</button>
+      </div>
+
+      <!-- Betting Controls -->
+      <div id="bettingBox" class="hidden sticky bottom-2 z-30 p-3.5 rounded-2xl bg-[#0d1322]/95 backdrop-blur border border-amber-400/50 space-y-2.5 shadow-2xl">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-black text-amber-300">⭐ 내 배팅 설정</span>
+          <span id="myChipsText" class="font-black text-white">보유: 0칩</span>
+        </div>
+        <div class="flex items-center justify-between gap-2 bg-[#080c17] border border-[#1f2942] rounded-xl px-3.5 py-2.5">
+          <span class="text-xs font-bold text-slate-400">현재 배팅 <span class="text-[10px] text-slate-500">(최소 1만)</span></span>
+          <span id="myPendingBetText" class="text-lg font-black text-amber-300">0칩</span>
+        </div>
+        <div class="grid grid-cols-4 gap-1.5">
+          <button type="button" data-bet-add="10000" class="py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-black text-cyan-300 border border-slate-700">+1만</button>
+          <button type="button" data-bet-add="100000" class="py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-black text-indigo-300 border border-slate-700">+10만</button>
+          <button type="button" data-bet-add="1000000" class="py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-black text-amber-300 border border-slate-700">+100만</button>
+          <button type="button" id="btnBetReset" class="py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-black text-slate-300 border border-slate-700">초기화</button>
+        </div>
+        <div class="grid grid-cols-3 gap-1.5">
+          <button type="button" id="btnBetQuarter" class="py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-xs font-black text-emerald-300 border border-emerald-500/40">쿼터 (1/4)</button>
+          <button type="button" id="btnBetHalf" class="py-2 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-xs font-black text-sky-300 border border-sky-500/40">하프 (1/2)</button>
+          <button type="button" id="btnBetAllIn" class="py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-xs font-black text-rose-300 border border-rose-500/40">올인</button>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" id="btnRebuy" class="hidden px-3 py-2.5 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 font-black text-xs shrink-0">🛟 +300 스타 파산 구제</button>
+          <button type="button" id="btnConfirmBet" class="flex-1 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-slate-950 font-black text-sm shadow">✅ 배팅 확정</button>
+        </div>
+      </div>
+
+      <!-- Player Action Controls -->
+      <div id="actionBox" class="hidden sticky bottom-2 z-30 p-3 rounded-2xl bg-[#0d1322]/95 backdrop-blur border border-cyan-400/50 space-y-2 shadow-2xl">
+        <div class="text-center text-xs font-black text-cyan-300">🎯 내 차례입니다! 행동을 선택하세요</div>
+        <div class="grid grid-cols-2 gap-2">
+          <button id="btnHit" type="button" class="py-3 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 hover:brightness-110 text-slate-950 font-black text-sm shadow">🃏 히트 (Hit)</button>
+          <button id="btnStand" type="button" class="py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-sm shadow">✋ 스탠드 (Stand)</button>
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          <button id="btnDouble" type="button" class="py-2 rounded-xl bg-indigo-500/25 hover:bg-indigo-500/35 disabled:opacity-30 border border-indigo-400/40 text-indigo-200 font-black text-xs">⚡ 더블다운</button>
+          <button id="btnSplit" type="button" class="py-2 rounded-xl bg-purple-500/25 hover:bg-purple-500/35 disabled:opacity-30 border border-purple-400/40 text-purple-200 font-black text-xs">✂️ 스플릿</button>
+          <button id="btnSurrender" type="button" class="py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 border border-slate-700 text-slate-300 font-black text-xs">🏳️ 서렌더</button>
+        </div>
+      </div>
+
+      <!-- Final Standings Box -->
+      <div id="finalBox" class="hidden p-4 rounded-2xl bg-amber-500/15 border border-amber-400/50 space-y-2.5 text-center">
+        <div class="text-base font-black text-amber-300">🏆 최종 칩 순위</div>
+        <div id="finalStandingsList" class="space-y-1.5 text-xs"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const CLIENT_UID = window.ArcadeAuth ? window.ArcadeAuth.getClientId() : ('u_' + Math.random().toString(36).slice(2, 9));
+    const prof = window.ArcadeAuth ? window.ArcadeAuth.getProfile() : null;
+    if (!prof || !prof.nickname) { window.location.href = '/'; }
+    const MY_NICK = prof?.nickname || '유저';
+
+    const bjSfx = (() => {
+      let ctx = null;
+      const getCtx = () => {
+        if (!ctx) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC) ctx = new AC();
+        }
+        if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+        return ctx;
+      };
+      const tone = (freq, dur, type = 'sine', vol = 0.14, delay = 0) => {
+        const c = getCtx();
+        if (!c) return;
+        const o = c.createOscillator();
+        const g = c.createGain();
+        o.type = type;
+        o.frequency.setValueAtTime(freq, c.currentTime + delay);
+        g.gain.setValueAtTime(vol, c.currentTime + delay);
+        g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + delay + dur);
+        o.connect(g); g.connect(c.destination);
+        o.start(c.currentTime + delay); o.stop(c.currentTime + delay + dur + 0.02);
+      };
+      return {
+        chip: () => { tone(920, 0.04, 'triangle', 0.12); tone(1320, 0.05, 'sine', 0.09, 0.03); },
+        deal: () => { [380, 460, 540].forEach((f, i) => tone(f, 0.06, 'triangle', 0.11, i * 0.06)); },
+        card: () => { tone(440, 0.05, 'triangle', 0.12); tone(660, 0.07, 'sine', 0.1, 0.04); },
+        dealerCard: () => { tone(310, 0.07, 'triangle', 0.14); tone(470, 0.08, 'sine', 0.12, 0.05); },
+        dealerFlip: () => { tone(260, 0.06, 'sine', 0.12); tone(520, 0.1, 'triangle', 0.14, 0.05); },
+        push: () => { tone(440, 0.12, 'sine', 0.12); tone(440, 0.14, 'sine', 0.11, 0.14); },
+        lose: () => { tone(300, 0.14, 'triangle', 0.14); tone(210, 0.22, 'sawtooth', 0.12, 0.12); },
+        bust: () => { tone(220, 0.16, 'sawtooth', 0.18); tone(140, 0.28, 'sawtooth', 0.18, 0.12); },
+        blackjack: () => { [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.24, 'triangle', 0.19, i * 0.07)); },
+        win: () => { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.2, 'triangle', 0.17, i * 0.08)); }
+      };
+    })();
+
+    const socket = io('/blackjack');
+    let currentRoom = null;
+    let roomsList = [];
+    let lastStatus = null;
+    let lastDealerCardCount = 0;
+    let lastDealerHoleHidden = true;
+    let lastPlayerCardCount = 0;
+    let lastSettledRound = 0;
+    let settlementHideTimer = null;
+    let timerIv = null;
+
+    function showSettlementPopup(myPlayer, roundNum) {
+      if (!myPlayer || !Array.isArray(myPlayer.hands) || myPlayer.hands.length === 0) return;
+      const totalNet = myPlayer.hands.reduce((acc, h) => acc + (h.net || 0), 0);
+      const hasBj = myPlayer.hands.some((h) => h.result === 'BLACKJACK');
+      const hasBust = myPlayer.hands.every((h) => h.result === 'BUST');
+      const hasSur = myPlayer.hands.every((h) => h.result === 'SURRENDER');
+
+      const pop = document.getElementById('settlementPopup');
+      const card = document.getElementById('settlementPopupCard');
+      const titleEl = document.getElementById('settlementPopupTitle');
+      const netEl = document.getElementById('settlementPopupNet');
+      const subEl = document.getElementById('settlementPopupSub');
+
+      if (hasBj && totalNet > 0) {
+        titleEl.textContent = '🃏 BLACKJACK!';
+        titleEl.className = 'text-2xl font-black text-amber-300';
+        card.className = 'w-full max-w-xs rounded-3xl bg-[#0d1322] border-2 border-amber-400 p-6 text-center shadow-2xl space-y-2.5';
+      } else if (totalNet > 0) {
+        titleEl.textContent = '👑 라운드 승리!';
+        titleEl.className = 'text-xl font-black text-emerald-300';
+        card.className = 'w-full max-w-xs rounded-3xl bg-[#0d1322] border-2 border-emerald-400 p-6 text-center shadow-2xl space-y-2.5';
+      } else if (totalNet === 0) {
+        titleEl.textContent = '🤝 무승부 (Push)';
+        titleEl.className = 'text-xl font-black text-slate-200';
+        card.className = 'w-full max-w-xs rounded-3xl bg-[#0d1322] border-2 border-slate-500 p-6 text-center shadow-2xl space-y-2.5';
+      } else if (hasBust) {
+        titleEl.textContent = '💥 버스트!';
+        titleEl.className = 'text-xl font-black text-rose-400';
+        card.className = 'w-full max-w-xs rounded-3xl bg-[#0d1322] border-2 border-rose-500 p-6 text-center shadow-2xl space-y-2.5';
+      } else if (hasSur) {
+        titleEl.textContent = '🏳️ 서렌더';
+        titleEl.className = 'text-xl font-black text-slate-300';
+        card.className = 'w-full max-w-xs rounded-3xl bg-[#0d1322] border-2 border-slate-500 p-6 text-center shadow-2xl space-y-2.5';
+      } else {
+        titleEl.textContent = '💔 아쉽네요!';
+        titleEl.className = 'text-xl font-black text-rose-400';
+        card.className = 'w-full max-w-xs rounded-3xl bg-[#0d1322] border-2 border-rose-500 p-6 text-center shadow-2xl space-y-2.5';
+      }
+
+      if (totalNet > 0) {
+        netEl.textContent = `+${totalNet.toLocaleString()} 칩`;
+        netEl.className = 'text-3xl font-black text-emerald-300 tracking-tight';
+      } else if (totalNet < 0) {
+        netEl.textContent = `${totalNet.toLocaleString()} 칩`;
+        netEl.className = 'text-3xl font-black text-rose-400 tracking-tight';
+      } else {
+        netEl.textContent = '±0 칩';
+        netEl.className = 'text-3xl font-black text-slate-300 tracking-tight';
+      }
+
+      subEl.textContent = `${roundNum}R 정산 · 현재 보유 ${myPlayer.chips.toLocaleString()}칩`;
+      pop.classList.remove('hidden');
+      if (settlementHideTimer) clearTimeout(settlementHideTimer);
+      settlementHideTimer = setTimeout(() => {
+        pop.classList.add('hidden');
+      }, 2800);
+    }
+
+    function showToast(msg) {
+      if (typeof msg === "string" && (msg.indexOf("이미 생성한 방") !== -1 || msg.indexOf("이미 입장 중인 방") !== -1) && window.ArcadeMyRooms) { window.ArcadeMyRooms.openConflictPopup(msg); }
+      const b = document.getElementById('toastBox');
+      b.textContent = msg;
+      b.classList.remove('hidden');
+      setTimeout(() => b.classList.add('hidden'), 2600);
+    }
+
+    const landedCardKeys = new Set();
+    const flyingCardKeys = new Set();
+    let lastAnimatedRound = -1;
+
+    function spawnFlyingCardTo(slotKey, targetEl, delayMs = 0, playSound = false) {
+      if (!targetEl || landedCardKeys.has(slotKey) || flyingCardKeys.has(slotKey)) return;
+      const anchor = document.getElementById('shoeDeckAnchor');
+      if (!anchor) {
+        landedCardKeys.add(slotKey);
+        targetEl.style.opacity = '1';
+        return;
+      }
+      const aRect = anchor.getBoundingClientRect();
+      const tRect = targetEl.getBoundingClientRect();
+      if (tRect.width === 0 || tRect.height === 0) {
+        landedCardKeys.add(slotKey);
+        targetEl.style.opacity = '1';
+        return;
+      }
+      flyingCardKeys.add(slotKey);
+
+      setTimeout(() => {
+        if (playSound) bjSfx.card();
+        const fly = document.createElement('div');
+        fly.className = 'flying-card card-back';
+        fly.style.left = `${aRect.left + aRect.width * 0.2}px`;
+        fly.style.top = `${aRect.top}px`;
+        fly.style.transform = 'translate(0px, 0px) rotate(-20deg) scale(0.72)';
+        fly.style.opacity = '1';
+        document.body.appendChild(fly);
+
+        const dx = (tRect.left + tRect.width * 0.5 - 27) - (aRect.left + aRect.width * 0.2);
+        const dy = (tRect.top + tRect.height * 0.5 - 39) - aRect.top;
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            fly.style.transform = `translate(${dx}px, ${dy}px) rotate(0deg) scale(1.05)`;
+            fly.style.opacity = '0.95';
+          });
+        });
+
+        setTimeout(() => {
+          flyingCardKeys.delete(slotKey);
+          landedCardKeys.add(slotKey);
+          const liveEl = document.querySelector(`[data-card-slot="${slotKey}"]`);
+          if (liveEl) {
+            liveEl.style.opacity = '1';
+            liveEl.classList.add('card-enter');
+          }
+          fly.remove();
+        }, 520);
+      }, delayMs);
+    }
+
+    let prevHandCounts = {};
+
+    function renderCardEl(c, slotKey, mini = false) {
+      const hiddenStyle = (slotKey && !landedCardKeys.has(slotKey)) ? 'style="opacity: 0;"' : '';
+      const slotAttr = slotKey ? `data-card-slot="${slotKey}"` : '';
+      const sizeCls = mini ? 'playing-card-mini' : 'playing-card';
+      if (c.hidden) {
+        return `<div ${slotAttr} ${hiddenStyle} class="${sizeCls} card-back flex items-center justify-center text-slate-300 ${mini ? 'text-xs' : 'text-lg'} font-black">?</div>`;
+      }
+      const isRed = c.suit === '♥' || c.suit === '♦';
+      const clr = isRed ? 'text-rose-600' : 'text-slate-900';
+      if (mini) {
+        return `
+          <div ${slotAttr} ${hiddenStyle} class="${sizeCls} relative bg-white border border-slate-300 flex items-center justify-center select-none ${clr}">
+            <span class="absolute top-0.5 left-1 text-[10px] font-black leading-none tracking-tighter">${c.rank}</span>
+            <span class="text-sm leading-none">${c.suit}</span>
+            <span class="absolute bottom-0.5 right-1 text-[10px] font-black leading-none tracking-tighter rotate-180">${c.rank}</span>
+          </div>
+        `;
+      }
+      return `
+        <div ${slotAttr} ${hiddenStyle} class="${sizeCls} relative bg-white border-2 border-slate-300 flex items-center justify-center select-none ${clr}">
+          <span class="absolute top-1 left-1.5 text-base sm:text-lg font-black leading-none tracking-tighter">${c.rank}</span>
+          <span class="text-3xl sm:text-4xl leading-none">${c.suit}</span>
+          <span class="absolute bottom-1 right-1.5 text-base sm:text-lg font-black leading-none tracking-tighter rotate-180">${c.rank}</span>
+        </div>
+      `;
+    }
+
+    function renderLobby() {
+      document.getElementById('viewLobby').classList.remove('hidden');
+      document.getElementById('viewGame').classList.add('hidden');
+      document.getElementById('roomCountBadge').textContent = `${roomsList.length}개`;
+      const box = document.getElementById('roomsList');
+      if (roomsList.length === 0) {
+        box.innerHTML = '<div class="p-6 rounded-2xl bg-[#080c17] border border-[#1f2942] text-center text-xs text-slate-500">열려 있는 블랙잭 테이블이 없습니다.</div>';
+        return;
+      }
+      box.innerHTML = '';
+      roomsList.forEach((rm) => {
+        const isHostRoom = rm.hostClientId === CLIENT_UID;
+        const isMemberRoom = isHostRoom || (Array.isArray(rm.playerIds) && rm.playerIds.includes(CLIENT_UID));
+        const div = document.createElement('div');
+        div.className = isMemberRoom
+          ? 'p-3 rounded-xl bg-amber-500/10 border-2 border-amber-400/70 flex items-center justify-between gap-2'
+          : 'p-3 rounded-xl bg-[#080c17] border border-[#1f2942] flex items-center justify-between gap-2';
+        const modeTxt = rm.totalRounds > 0 ? `${rm.totalRounds}판` : '무제한';
+        div.innerHTML = `
+          <div class="min-w-0">
+            <div class="text-xs font-black text-white truncate flex items-center gap-1.5">
+              ${isMemberRoom ? `<span class="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-black shrink-0">${isHostRoom ? '👑 내 방' : '🟢 참여 중'}</span>` : ''}
+              <span class="truncate">${rm.hasPassword ? '🔒 ' : ''}${rm.title}</span>
+            </div>
+            <div class="text-[10px] text-slate-400">👑 ${rm.hostNickname} · ${rm.count}/${rm.maxPlayers}명 · ${rm.startingChips.toLocaleString()}칩 · ${modeTxt}</div>
+          </div>
+          <div class="flex gap-1.5 shrink-0">
+            <button type="button" data-join="join" class="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 text-xs font-black">${isMemberRoom ? '복귀' : '입장'}</button>
+            ${!isMemberRoom ? '<button type="button" data-join="spectate" class="px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold border border-slate-700">관전</button>' : ''}
+          </div>
+        `;
+        div.querySelectorAll('button[data-join]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const mode = btn.getAttribute('data-join');
+            let pw = '';
+            if (rm.hasPassword && rm.hostClientId !== CLIENT_UID) {
+              pw = prompt('방 비밀번호(숫자 4자리)를 입력하세요:') || '';
+              if (!pw) return;
+            }
+            socket.emit('bj_join_room', { roomId: rm.id, clientId: CLIENT_UID, nickname: MY_NICK, password: pw, mode }, (resp) => {
+              if (!resp || !resp.ok) { showToast(resp?.error || '입장 실패'); return; }
+              currentRoom = resp.room;
+              renderGame();
+            });
+          });
+        });
+        box.appendChild(div);
+      });
+    }
+
+    function updateTimerBadge() {
+      const tb = document.getElementById('timerBadge');
+      if (!currentRoom || !currentRoom.phaseEndsAt || (currentRoom.status !== 'BETTING' && currentRoom.status !== 'PLAYER_TURN')) {
+        tb.classList.add('hidden');
+        return;
+      }
+      const rem = Math.max(0, Math.ceil((currentRoom.phaseEndsAt - Date.now()) / 1000));
+      tb.classList.remove('hidden');
+      tb.textContent = `⏱️ ${rem}초`;
+    }
+
+    function renderGame() {
+      if (!currentRoom) { renderLobby(); return; }
+      const rm = currentRoom;
+      document.getElementById('viewLobby').classList.add('hidden');
+      document.getElementById('viewGame').classList.remove('hidden');
+
+      const isHost = rm.hostClientId === CLIENT_UID;
+      const myPlayer = rm.players.find((p) => p.clientId === CLIENT_UID);
+      const myIdx = rm.players.findIndex((p) => p.clientId === CLIENT_UID);
+
+      document.getElementById('gameRoomTitle').textContent = `${rm.hasPassword ? '🔒 ' : ''}${rm.title}`;
+      document.getElementById('gameRoomSub').textContent = `👑 방장: ${rm.hostNickname} · 참여 ${rm.players.length}/${rm.maxPlayers}명 · 관전 ${rm.spectators.length}명`;
+      document.getElementById('roundBadge').textContent = rm.round === 0 ? '대기 중' : (rm.totalRounds > 0 ? `${rm.round} / ${rm.totalRounds}R` : `${rm.round}R`);
+      document.getElementById('shoeBadge').textContent = `슈: ${rm.shoeRemaining}장`;
+      document.getElementById('tableLogText').textContent = rm.tableLog || '';
+
+      updateTimerBadge();
+
+      if (rm.status === 'BETTING' || rm.status === 'WAITING' || lastAnimatedRound !== rm.round) {
+        landedCardKeys.clear();
+        flyingCardKeys.clear();
+        prevHandCounts = {};
+        lastAnimatedRound = rm.round;
+      }
+
+      // Dealer
+      const dScore = rm.dealer.cards.length === 0 ? '-' : `${rm.dealer.total}${rm.dealer.isSoft ? ' (Soft)' : ''}${rm.dealer.isNatural ? ' BLACKJACK!' : ''}${rm.dealer.isBust ? ' BUST!' : ''}`;
+      document.getElementById('dealerScoreBadge').textContent = dScore;
+      const prevDealerLen = prevHandCounts['__dealer__'] || 0;
+      document.getElementById('dealerCards').innerHTML = rm.dealer.cards.length > 0
+        ? rm.dealer.cards.map((c, idx) => renderCardEl(c, `dealer_${idx}`)).join('')
+        : '<div class="text-xs text-emerald-200/40 font-bold">딜러 대기 중</div>';
+      const isInitialDeal = prevDealerLen === 0 && rm.dealer.cards.length >= 2;
+      if (!isInitialDeal && rm.dealer.cards.length > prevDealerLen) {
+        const dEls = document.getElementById('dealerCards').children;
+        for (let i = prevDealerLen; i < dEls.length; i++) {
+          spawnFlyingCardTo(`dealer_${i}`, dEls[i], (i - prevDealerLen) * 260, false);
+        }
+      }
+      prevHandCounts['__dealer__'] = rm.dealer.cards.length;
+
+      // Players: 1 Focused Player in #playersGrid (Active Turn player, or Myself), everyone else in horizontal #otherPlayersStrip
+      const pGrid = document.getElementById('playersGrid');
+      const stripEl = document.getElementById('otherPlayersStrip');
+      pGrid.innerHTML = '';
+      stripEl.innerHTML = '';
+
+      const focusIdx = (rm.status === 'PLAYER_TURN' && rm.activePlayerIndex >= 0 && rm.players[rm.activePlayerIndex])
+        ? rm.activePlayerIndex
+        : (myIdx >= 0 ? myIdx : 0);
+
+      const stripPlayers = rm.players.filter((_, idx) => idx !== focusIdx);
+      stripEl.classList.toggle('hidden', stripPlayers.length === 0);
+
+      rm.players.forEach((p, idx) => {
+        const isTurn = rm.status === 'PLAYER_TURN' && rm.activePlayerIndex === idx;
+        const isMe = p.clientId === CLIENT_UID;
+        const isFocused = idx === focusIdx;
+
+        if (!isFocused) {
+          const chipCard = document.createElement('div');
+          chipCard.className = `shrink-0 min-w-[138px] max-w-[175px] p-2 rounded-xl bg-black/45 border ${
+            isMe ? 'border-cyan-400/50' : 'border-emerald-400/20'
+          } space-y-1`;
+          let miniHtml = '';
+          if (p.hands.length === 0) {
+            miniHtml = `<div class="text-[10px] font-bold ${p.betConfirmed ? 'text-emerald-300' : 'text-slate-400'} truncate">${
+              rm.status === 'BETTING' ? (p.betConfirmed ? `✅ ${p.pendingBet.toLocaleString()}` : `⏳ ${p.pendingBet.toLocaleString()}`) : '대기'
+            }</div>`;
+          } else {
+            miniHtml = p.hands.map((h, hIdx) => `
+              <div class="space-y-0.5">
+                <div class="flex items-center justify-between text-[10px] font-black">
+                  <span class="text-amber-300">${h.bet.toLocaleString()}</span>
+                  <span class="${h.isBust ? 'text-rose-400' : 'text-white'}">${h.total}점</span>
+                </div>
+                <div class="flex gap-1 justify-center" data-hand-key="${p.clientId}_${hIdx}">${h.cards.map((c, cIdx) => renderCardEl(c, `${p.clientId}_${hIdx}_${cIdx}`, true)).join('')}</div>
+              </div>
+            `).join('');
+          }
+          chipCard.innerHTML = `
+            <div class="flex items-center justify-between gap-1">
+              <span class="text-[11px] font-black ${isMe ? 'text-cyan-300' : 'text-white'} truncate">${p.nickname}${isMe ? '(나)' : ''}</span>
+              <span class="text-[10px] font-bold text-amber-300 shrink-0">${p.chips.toLocaleString()}</span>
+            </div>
+            ${miniHtml}
+          `;
+          stripEl.appendChild(chipCard);
+          return;
+        }
+
+        const cardDiv = document.createElement('div');
+        cardDiv.className = `p-3 rounded-2xl bg-black/45 border-2 space-y-2 ${
+          isTurn ? 'border-amber-400 shadow-lg shadow-amber-500/20' : isMe ? 'border-cyan-400/60' : 'border-emerald-400/30'
+        }`;
+
+        let handsHtml = '';
+        if (p.hands.length === 0) {
+          if (rm.status === 'BETTING') {
+            handsHtml = `<div class="text-xs font-bold text-center py-2 ${p.betConfirmed ? 'text-emerald-300' : 'text-amber-300'}">${p.betConfirmed ? `✅ 배팅 확정 (${p.pendingBet.toLocaleString()}칩)` : `⏳ 배팅 중 (${p.pendingBet.toLocaleString()}칩)`}</div>`;
+          } else {
+            handsHtml = `<div class="text-xs text-slate-500 font-semibold text-center py-2">대기 / 관전</div>`;
+          }
+        } else {
+          handsHtml = p.hands.map((h, hIdx) => {
+            const activeHand = isTurn && p.activeHandIndex === hIdx;
+            const resMap = {
+              BLACKJACK: '<span class="text-amber-300">🃏 블랙잭! (+' + h.net.toLocaleString() + ')</span>',
+              WIN: '<span class="text-emerald-300">👑 승리 (+' + h.net.toLocaleString() + ')</span>',
+              PUSH: '<span class="text-slate-300">🤝 무승부 (원금 반환)</span>',
+              BUST: '<span class="text-rose-400">💥 버스트 (-' + h.bet.toLocaleString() + ')</span>',
+              LOSE: '<span class="text-rose-400">💔 패배 (-' + h.bet.toLocaleString() + ')</span>',
+              SURRENDER: '<span class="text-slate-400">🏳️ 서렌더 (-' + (h.bet - h.payout).toLocaleString() + ')</span>'
+            };
+            return `
+              <div class="p-2 rounded-xl bg-black/30 border ${activeHand ? 'border-amber-400/70' : 'border-white/10'} space-y-1.5">
+                <div class="flex items-center justify-between text-xs font-black">
+                  <span class="text-amber-300">${p.hands.length > 1 ? `핸드 ${hIdx + 1} · ` : ''}배팅 ${h.bet.toLocaleString()}칩</span>
+                  <span class="${h.isBust ? 'text-rose-400' : 'text-white'}">${h.total}점${h.isSoft ? ' (Soft)' : ''}</span>
+                </div>
+                <div class="flex flex-wrap gap-1.5 justify-center" data-hand-key="${p.clientId}_${hIdx}">${h.cards.map((c, cIdx) => renderCardEl(c, `${p.clientId}_${hIdx}_${cIdx}`, false)).join('')}</div>
+                ${h.result ? `<div class="text-center text-xs font-black">${resMap[h.result] || h.result}</div>` : ''}
+              </div>
+            `;
+          }).join('');
+        }
+
+        cardDiv.innerHTML = `
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs sm:text-sm font-black ${isMe ? 'text-cyan-300' : 'text-white'} truncate">${isTurn ? '🔥 현재 차례: ' : ''}${p.nickname}${isMe ? ' (나)' : ''}</span>
+            <span class="text-xs font-black text-amber-300 shrink-0">${p.chips.toLocaleString()}칩</span>
+          </div>
+          ${handsHtml}
+        `;
+        pGrid.appendChild(cardDiv);
+      });
+
+      // Trigger flying card animations one-by-one from the shoe
+      if (isInitialDeal) {
+        let stepIdx = 0;
+        const dEls = document.getElementById('dealerCards').children;
+        for (let roundCardIdx = 0; roundCardIdx < 2; roundCardIdx++) {
+          rm.players.forEach((p) => {
+            const h = p.hands && p.hands[0];
+            if (h && h.cards[roundCardIdx]) {
+              const container = document.querySelector(`[data-hand-key="${p.clientId}_0"]`);
+              if (container && container.children[roundCardIdx]) {
+                spawnFlyingCardTo(`${p.clientId}_0_${roundCardIdx}`, container.children[roundCardIdx], stepIdx * 260, true);
+                stepIdx++;
+              }
+            }
+          });
+          if (dEls[roundCardIdx]) {
+            spawnFlyingCardTo(`dealer_${roundCardIdx}`, dEls[roundCardIdx], stepIdx * 260, true);
+            stepIdx++;
+          }
+        }
+        rm.players.forEach((p) => {
+          (p.hands || []).forEach((h, hIdx) => {
+            prevHandCounts[`${p.clientId}_${hIdx}`] = h.cards.length;
+          });
+          if (!p.hands || p.hands.length === 0) {
+            prevHandCounts[`${p.clientId}_0`] = 0;
+            prevHandCounts[`${p.clientId}_1`] = 0;
+          }
+        });
+      } else {
+        let dealStagger = 0;
+        rm.players.forEach((p) => {
+          (p.hands || []).forEach((h, hIdx) => {
+            const key = `${p.clientId}_${hIdx}`;
+            const prevLen = prevHandCounts[key] || 0;
+            if (h.cards.length > prevLen) {
+              const container = document.querySelector(`[data-hand-key="${key}"]`);
+              if (container) {
+                for (let i = prevLen; i < h.cards.length; i++) {
+                  spawnFlyingCardTo(`${key}_${i}`, container.children[i], dealStagger * 260, false);
+                  dealStagger++;
+                }
+              }
+            }
+            prevHandCounts[key] = h.cards.length;
+          });
+          if (!p.hands || p.hands.length === 0) {
+            prevHandCounts[`${p.clientId}_0`] = 0;
+            prevHandCounts[`${p.clientId}_1`] = 0;
+          }
+        });
+      }
+
+      // Sound effects on card draws, dealer hole flip, & phase transitions
+      const currDealerCount = rm.dealer?.cards?.length || 0;
+      const currDealerHidden = Boolean(rm.dealer?.holeHidden);
+      const currPlayerCards = rm.players.reduce((s, p) => s + (p.hands || []).reduce((hs, h) => hs + (h.cards?.length || 0), 0), 0);
+
+      if (lastStatus !== rm.status && rm.status === 'PLAYER_TURN') {
+        bjSfx.deal();
+      } else if (rm.status === 'PLAYER_TURN' && currPlayerCards > lastPlayerCardCount) {
+        bjSfx.card();
+      }
+      if (rm.status === 'DEALER_TURN') {
+        if (lastDealerHoleHidden && !currDealerHidden) {
+          bjSfx.dealerFlip();
+        } else if (currDealerCount > lastDealerCardCount) {
+          bjSfx.dealerCard();
+        }
+      }
+      if (lastStatus !== rm.status && (rm.status === 'SETTLED' || rm.status === 'GAME_OVER')) {
+        if (myPlayer && myPlayer.hands.length > 0) {
+          const totalNet = myPlayer.hands.reduce((acc, h) => acc + (h.net || 0), 0);
+          if (myPlayer.hands.some((h) => h.result === 'BLACKJACK') && totalNet > 0) bjSfx.blackjack();
+          else if (totalNet > 0) bjSfx.win();
+          else if (totalNet === 0) bjSfx.push();
+          else if (myPlayer.hands.every((h) => h.result === 'BUST')) bjSfx.bust();
+          else bjSfx.lose();
+          if (lastSettledRound !== rm.round) {
+            lastSettledRound = rm.round;
+            showSettlementPopup(myPlayer, rm.round);
+          }
+        }
+      }
+      if (rm.status === 'BETTING') {
+        document.getElementById('settlementPopup').classList.add('hidden');
+      }
+      lastDealerCardCount = currDealerCount;
+      lastDealerHoleHidden = currDealerHidden;
+      lastPlayerCardCount = currPlayerCards;
+      lastStatus = rm.status;
+
+      // Host controls
+      const hostBox = document.getElementById('hostControlsBox');
+      if (isHost && (rm.status === 'WAITING' || rm.status === 'SETTLED' || rm.status === 'GAME_OVER')) {
+        hostBox.classList.remove('hidden');
+        document.getElementById('btnStartRound').textContent = rm.status === 'GAME_OVER' ? '🔁 새 게임 시작' : (rm.status === 'SETTLED' ? '➡️ 다음 라운드' : '🚀 게임 시작');
+      } else {
+        hostBox.classList.add('hidden');
+      }
+
+      // Betting controls
+      const betBox = document.getElementById('bettingBox');
+      if (rm.status === 'BETTING' && myPlayer) {
+        betBox.classList.remove('hidden');
+        document.getElementById('myChipsText').textContent = `보유: ${myPlayer.chips.toLocaleString()}칩`;
+        document.getElementById('myPendingBetText').textContent = `${myPlayer.pendingBet.toLocaleString()}칩`;
+        document.getElementById('btnConfirmBet').disabled = myPlayer.betConfirmed;
+        document.getElementById('btnConfirmBet').textContent = myPlayer.betConfirmed ? '⏳ 다른 플레이어 대기 중...' : '✅ 배팅 확정';
+        document.getElementById('btnRebuy').classList.toggle('hidden', myPlayer.chips >= 100);
+      } else {
+        betBox.classList.add('hidden');
+      }
+
+      // Action controls
+      const actBox = document.getElementById('actionBox');
+      const isMyTurn = rm.status === 'PLAYER_TURN' && myIdx >= 0 && rm.activePlayerIndex === myIdx;
+      if (isMyTurn && myPlayer) {
+        actBox.classList.remove('hidden');
+        const h = myPlayer.hands[myPlayer.activeHandIndex];
+        const canDouble = h && h.cards.length === 2 && myPlayer.chips >= h.bet;
+        const val = (r) => (r === 'A' ? 11 : (['K', 'Q', 'J', '10'].includes(r) ? 10 : Number(r)));
+        const canSplit = h && h.cards.length === 2 && myPlayer.hands.length < 2 && myPlayer.chips >= h.bet && val(h.cards[0].rank) === val(h.cards[1].rank);
+        const canSurrender = h && h.cards.length === 2 && !h.fromSplit;
+        document.getElementById('btnDouble').disabled = !canDouble;
+        document.getElementById('btnSplit').disabled = !canSplit;
+        document.getElementById('btnSurrender').disabled = !canSurrender;
+      } else {
+        actBox.classList.add('hidden');
+      }
+
+      // Final Standings
+      const finalBox = document.getElementById('finalBox');
+      if (rm.status === 'GAME_OVER' && Array.isArray(rm.finalStandings)) {
+        finalBox.classList.remove('hidden');
+        document.getElementById('finalStandingsList').innerHTML = rm.finalStandings.map((s) =>
+          `<div class="flex justify-between px-3 py-1.5 rounded-lg bg-black/30 font-black"><span>${s.rank === 1 ? '🥇' : s.rank === 2 ? '🥈' : s.rank === 3 ? '🥉' : `${s.rank}위`} ${s.nickname}</span><span class="text-amber-300">${s.chips.toLocaleString()}칩</span></div>`
+        ).join('');
+      } else {
+        finalBox.classList.add('hidden');
+      }
+    }
+
+    document.getElementById('createForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!socket.connected) {
+        showToast('⚠️ 서버와 연결 중입니다. 잠시 후 다시 눌러주세요.');
+        socket.connect();
+        return;
+      }
+      socket.emit('bj_create_room', {
+        title: document.getElementById('roomTitleInput').value.trim(),
+        password: document.getElementById('roomPwInput').value.trim(),
+        startingChips: Number(document.getElementById('startingChipsSelect').value),
+        totalRounds: Number(document.getElementById('totalRoundsSelect').value),
+        bettingDurationSec: Number(document.getElementById('betTimerSelect').value),
+        clientId: CLIENT_UID,
+        nickname: MY_NICK
+      }, (resp) => {
+        if (!resp || !resp.ok) { showToast(resp?.error || '방 생성 실패'); return; }
+        currentRoom = resp.room;
+        renderGame();
+        if (window.ArcadeEconomy) window.ArcadeEconomy.refresh();
+      });
+    });
+
+    document.getElementById('btnCloseSettlementPopup').addEventListener('click', () => {
+      document.getElementById('settlementPopup').classList.add('hidden');
+    });
+    document.getElementById('settlementPopup').addEventListener('click', (e) => {
+      if (e.target.id === 'settlementPopup') document.getElementById('settlementPopup').classList.add('hidden');
+    });
+
+    document.getElementById('btnLeaveRoom').addEventListener('click', () => {
+      if (currentRoom) {
+        if (currentRoom.status === 'PLAYER_TURN' || currentRoom.status === 'DEALER_TURN') {
+          showToast('⏳ 진행 중인 라운드가 정산된 후 나가주세요!');
+          return;
+        }
+        socket.emit('bj_leave_room', { roomId: currentRoom.id, clientId: CLIENT_UID });
+      }
+      currentRoom = null;
+      renderLobby();
+    });
+
+    document.getElementById('btnStartRound').addEventListener('click', () => {
+      if (currentRoom) socket.emit('bj_start_round', { roomId: currentRoom.id, clientId: CLIENT_UID });
+    });
+
+    document.querySelectorAll('button[data-bet-add]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (!currentRoom) return;
+        const p = currentRoom.players.find((x) => x.clientId === CLIENT_UID);
+        if (!p || p.betConfirmed) return;
+        const add = Number(btn.getAttribute('data-bet-add')) || 0;
+        bjSfx.chip();
+        socket.emit('bj_set_bet', { roomId: currentRoom.id, clientId: CLIENT_UID, amount: Math.min(p.chips, p.pendingBet + add) });
+      });
+    });
+
+    document.getElementById('btnBetQuarter').addEventListener('click', () => {
+      if (!currentRoom) return;
+      const p = currentRoom.players.find((x) => x.clientId === CLIENT_UID);
+      if (!p || p.betConfirmed) return;
+      const qAmt = Math.max(Math.min(10000, p.chips), Math.floor(p.chips * 0.25));
+      bjSfx.chip();
+      socket.emit('bj_set_bet', { roomId: currentRoom.id, clientId: CLIENT_UID, amount: Math.min(p.chips, qAmt) });
+    });
+
+    document.getElementById('btnBetHalf').addEventListener('click', () => {
+      if (!currentRoom) return;
+      const p = currentRoom.players.find((x) => x.clientId === CLIENT_UID);
+      if (!p || p.betConfirmed) return;
+      const hAmt = Math.max(Math.min(10000, p.chips), Math.floor(p.chips * 0.5));
+      bjSfx.chip();
+      socket.emit('bj_set_bet', { roomId: currentRoom.id, clientId: CLIENT_UID, amount: Math.min(p.chips, hAmt) });
+    });
+
+    document.getElementById('btnBetAllIn').addEventListener('click', () => {
+      if (!currentRoom) return;
+      const p = currentRoom.players.find((x) => x.clientId === CLIENT_UID);
+      if (!p || p.betConfirmed) return;
+      bjSfx.chip();
+      socket.emit('bj_set_bet', { roomId: currentRoom.id, clientId: CLIENT_UID, amount: p.chips });
+    });
+
+    document.getElementById('btnBetReset').addEventListener('click', () => {
+      if (!currentRoom) return;
+      bjSfx.chip();
+      socket.emit('bj_set_bet', { roomId: currentRoom.id, clientId: CLIENT_UID, amount: 0 });
+    });
+
+    document.getElementById('btnConfirmBet').addEventListener('click', () => {
+      if (!currentRoom) return;
+      bjSfx.chip();
+      socket.emit('bj_confirm_bet', { roomId: currentRoom.id, clientId: CLIENT_UID });
+    });
+
+    document.getElementById('btnRebuy').addEventListener('click', () => {
+      if (!currentRoom) return;
+      bjSfx.chip();
+      socket.emit('bj_rebuy', { roomId: currentRoom.id, clientId: CLIENT_UID });
+    });
+
+    ['HIT', 'STAND', 'DOUBLE', 'SPLIT', 'SURRENDER'].forEach((act) => {
+      const idMap = { HIT: 'btnHit', STAND: 'btnStand', DOUBLE: 'btnDouble', SPLIT: 'btnSplit', SURRENDER: 'btnSurrender' };
+      document.getElementById(idMap[act]).addEventListener('click', () => {
+        if (!currentRoom) return;
+        bjSfx.card();
+        socket.emit('bj_action', { roomId: currentRoom.id, clientId: CLIENT_UID, action: act });
+      });
+    });
+
+    socket.on('bj_rooms_updated', (list) => {
+      roomsList = Array.isArray(list) ? list : [];
+      if (!currentRoom) renderLobby();
+    });
+
+    socket.on('bj_room_state', (rm) => {
+      currentRoom = rm;
+      renderGame();
+    });
+
+    socket.on('bj_room_deleted', ({ title }) => {
+      showToast(`📢 [${title || '테이블'}] 방이 종료되었습니다.`);
+      currentRoom = null;
+      renderLobby();
+    });
+
+    if (timerIv) clearInterval(timerIv);
+    timerIv = setInterval(updateTimerBadge, 500);
+    socket.emit('bj_list_rooms');
+  </script>
+  <script>
+    (function checkAdultAccess() {
+      function blockIfNotAdult(prof) {
+        if (prof && prof.isAdult === true) return;
+        document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070b14;color:#fff;padding:24px;text-align:center;font-family:sans-serif;"><div style="max-width:380px;background:#111625;border:1px solid #2b3861;border-radius:24px;padding:28px;"><div style="font-size:44px;margin-bottom:12px;">🔞</div><h2 style="font-size:20px;font-weight:900;margin:0 0 8px;">성인 인증이 필요한 게임입니다</h2><p style="font-size:13px;color:#94a3b8;margin:0 0 20px;line-height:1.5;">이 게임은 관리자의 성인 인증을 받은 계정만 이용할 수 있습니다.</p><a href="/" style="display:inline-block;padding:12px 22px;border-radius:14px;background:#5851f6;color:#fff;font-weight:800;font-size:13px;text-decoration:none;">🏠 메인 로비로 돌아가기</a></div></div>';
+      }
+      var p = window.ArcadeAuth && window.ArcadeAuth.getProfile ? window.ArcadeAuth.getProfile() : null;
+      if (!p || !p.isAdult) {
+        if (window.ArcadeAuth && window.ArcadeAuth.refreshMyProfile) {
+          window.ArcadeAuth.refreshMyProfile().then(function (fresh) {
+            blockIfNotAdult(fresh);
+          }).catch(function () { blockIfNotAdult(p); });
+        } else {
+          blockIfNotAdult(p);
+        }
+      }
+    })();
+  </script>
+</body>
+</html>
