@@ -1,0 +1,3349 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>실시간 OX 서바이벌 퀴즈</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/shared/auth-client.js?v=1.7.22"></script>
+  <script src="/shared/admin-panel.js?v=1.7.22"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
+  <style>
+    html, body {
+      background-color: #060913;
+      color: #f8fafc;
+    }
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    @keyframes floatUp {
+      0% { transform: translateY(0) scale(0.8); opacity: 0; }
+      15% { opacity: 1; transform: translateY(-20px) scale(1.1); }
+      100% { transform: translateY(-260px) scale(1); opacity: 0; }
+    }
+    .reaction-float {
+      animation: floatUp 2.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes drumShake {
+      0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+      25% { transform: translate(-5px, 3px) rotate(-4deg) scale(1.04); }
+      50% { transform: translate(5px, -3px) rotate(4deg) scale(1.07); }
+      75% { transform: translate(-4px, -2px) rotate(-2deg) scale(1.04); }
+    }
+    .drumroll-shake {
+      animation: drumShake 0.16s infinite;
+    }
+    @keyframes drumBarFill {
+      0% { width: 0%; }
+      100% { width: 100%; }
+    }
+    .drumroll-bar {
+      animation: drumBarFill 1.5s linear forwards;
+    }
+    @keyframes trophyPulse {
+      0%, 100% { transform: scale(1) rotate(-2deg); }
+      50% { transform: scale(1.08) rotate(2deg); }
+    }
+    .trophy-bounce {
+      animation: trophyPulse 1.6s ease-in-out infinite;
+    }
+  </style>
+  <style id="fouc-guard">
+    html, body { background-color: #060913; color: #f8fafc; }
+    .hidden { display: none !important; }
+    body { opacity: 0; transition: opacity 0.14s ease-out; }
+  </style>
+  <script>
+    (function () {
+      var revealed = false;
+      function reveal() {
+        if (revealed) return;
+        revealed = true;
+        if (document.body) document.body.style.opacity = '1';
+      }
+      function waitUntilStyled() {
+        var probe = document.createElement('div');
+        probe.className = 'bg-[#5851f6]';
+        probe.style.position = 'fixed';
+        probe.style.left = '-9999px';
+        document.body.appendChild(probe);
+
+        var start = Date.now();
+        var fontDone = false;
+        if (document.fonts && document.fonts.ready) {
+          document.fonts.ready.then(function () { fontDone = true; });
+        } else {
+          fontDone = true;
+        }
+
+        function check() {
+          if (revealed) return;
+          var twReady = getComputedStyle(probe).backgroundColor === 'rgb(88, 81, 246)';
+          var rootEl = document.getElementById('root');
+          var rootReady = !rootEl || rootEl.children.length > 0;
+          var elapsed = Date.now() - start;
+
+          if ((twReady && rootReady && (fontDone || elapsed > 450)) || elapsed > 1800) {
+            if (probe.parentNode) probe.parentNode.removeChild(probe);
+            requestAnimationFrame(reveal);
+          } else {
+            requestAnimationFrame(check);
+          }
+        }
+        requestAnimationFrame(check);
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', waitUntilStyled);
+      } else {
+        waitUntilStyled();
+      }
+      setTimeout(reveal, 2000);
+    })();
+  </script>
+</head>
+<body class="bg-slate-950 text-white min-h-screen overflow-x-hidden">
+  <!-- 상단 고정 관리자 공지 입력바 (리렌더링 시에도 포커스가 절대 풀리지 않도록 독립 배치!) -->
+  <div id="admin-sticky-bar" class="hidden sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-3 py-2.5">
+    <div class="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-black text-xs">MC 관리자</span>
+        <span id="admin-sticky-status" class="text-xs font-bold text-slate-300">대기 중</span>
+      </div>
+      <form onsubmit="sendAdminNotice(event)" class="flex items-center gap-1.5 flex-1 max-w-md">
+        <input
+          id="admin-notice-input"
+          type="text"
+          placeholder="전체 참가자에게 실시간 공지/멘트 전송 (Enter)"
+          autocomplete="off"
+          class="flex-1 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm font-bold text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
+        />
+        <button
+          type="submit"
+          class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shrink-0 cursor-pointer"
+        >
+          공지 전송
+        </button>
+      </form>
+      <div class="flex items-center gap-1.5">
+        <button
+          type="button"
+          onclick="toggleBgmBtn()"
+          id="admin-bgm-btn"
+          class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer"
+        >
+          🔇 BGM 켜기
+        </button>
+        <button
+          type="button"
+          onclick="deleteOxRoom()"
+          class="px-2.5 py-1.5 rounded-xl bg-rose-600/25 hover:bg-rose-600/40 border border-rose-500/40 text-rose-300 font-black text-xs cursor-pointer"
+        >
+          🗑️ 방 삭제
+        </button>
+        <button
+          type="button"
+          onclick="exitToHome()"
+          class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer"
+        >
+          나가기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 플로팅 이모지 & 폭죽 레이어 -->
+  <div id="floating-layer" class="fixed inset-0 pointer-events-none z-50 overflow-hidden"></div>
+
+  <!-- 메인 앱 루트 -->
+  <div id="app"></div>
+
+  <script>
+    let ROOM_CODE = localStorage.getItem('ox_room_code_v3') || '1004';
+    const OFFLINE_THRESHOLD_SEC = 30; // 접속 끊김/퇴장 판정 기준: 30초
+
+    const TOPICS = [
+      '일반상식', '과학/우주', '동물/자연', '역사/문화',
+      '음식/생활', '스포츠/게임', '수학/산수', '넌센스/재미'
+    ];
+    const DIFFICULTIES = ['쉬움', '보통', '어려움', '극악'];
+
+    const state = {
+      role: 'home', // Always open at Room Lobby ('home') unless ?admin=2601
+      currentRoomTitle: localStorage.getItem('ox_room_title_v3') || '',
+      currentRoomHostClientId: null,
+      newRoomMode: 'AUTO',
+      newRoomTopic: '일반상식',
+      newRoomDifficulty: 'auto',
+      newRoomDuration: 0,
+      newRoomTargetWins: 1,
+      roomsList: [],
+      myId: (window.ArcadeAuth && window.ArcadeAuth.getClientId ? window.ArcadeAuth.getClientId() : null) || localStorage.getItem('ox_uid_v3') || ('u_' + Math.random().toString(36).slice(2, 10) + '_' + Date.now().toString(36)),
+      nickname: localStorage.getItem('ox_nick_v3') || '',
+      selectedTopic: '일반상식',
+      customTopicInput: '',
+      selectedDifficulty: '보통',
+      customTimerSec: 10,
+      draftQuestion: '',
+      draftAnswer: 'O',
+      draftExplanation: '',
+      isGeneratingAi: false,
+      lastAiDebug: null,
+      showAdminPwModal: false,
+      showNicknameModal: false,
+      dismissedResultKey: null,
+      resultPopupTab: 'auto', // 'auto' | 'winner' | 'list'
+      isDrumrolling: false,
+      remainingSeconds: null,
+      autoNextRemainingSec: null,
+      serverOffsetMs: 0,
+      bgmPlaying: false,
+      usedQuestionCount: 0,
+      unusedBankCount: 0,
+      adminToast: '',
+      userToast: '',
+      nowTick: Date.now(),
+      quizState: {
+        roomMode: 'AUTO',
+        status: 'waiting',
+        question: '',
+        topic: '일반상식',
+        correctAnswer: 'O',
+        explanation: '',
+        difficulty: '보통',
+        roundNumber: 1,
+        questionId: 1,
+        targetWins: 1,
+        drumrollEnabled: true,
+        chimeStyle: 'classic_dingdong',
+        victoryMusicStyle: 'royal_fanfare',
+        finalChampionNickname: null,
+        gameStarted: false,
+        winnerNickname: null,
+        allWrongRevived: false,
+        revealAt: null,
+        countdownDuration: null,
+        autoPlayEnabled: false,
+        autoPlayStopAfterCurrent: false,
+        autoPlayTopic: '일반상식',
+        autoPlayDifficultyMode: 'auto',
+        autoPlayQuestionDurationSec: 0,
+        autoPlayIntervalSec: 8,
+        nextAutoQuestionAt: null,
+        updatedAt: 0
+      },
+      participants: [],
+      notices: []
+    };
+
+    localStorage.setItem('ox_uid_v3', state.myId);
+
+    // ============================================================================
+    // Web Audio API 사운드 합성 엔진 (출제 차임벨, 드럼롤, 정답/오답음, 오케스트라 우승 음악)
+    // ============================================================================
+    let audioCtx = null;
+    let bgmInterval = null;
+
+    function getAudioCtx() {
+      if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioCtx = new AC();
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+      return audioCtx;
+    }
+
+    function playTone(freq, duration, type = 'sine', vol = 0.18, delay = 0) {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+      const start = ctx.currentTime + delay;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.linearRampToValueAtTime(vol, start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + duration + 0.02);
+    }
+
+    // 풍성한 오케스트라 브라스/신스 화음 합성기
+    function playSynthBrass(freqs, duration, delay = 0, vol = 0.11) {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+      const list = Array.isArray(freqs) ? freqs : [freqs];
+      const start = ctx.currentTime + delay;
+
+      list.forEach((f) => {
+        [-4, 4].forEach((detuneCents) => {
+          const osc = ctx.createOscillator();
+          const filter = ctx.createBiquadFilter();
+          const gain = ctx.createGain();
+
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(f, start);
+          osc.detune.setValueAtTime(detuneCents, start);
+
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(f * 1.5, start);
+          filter.frequency.exponentialRampToValueAtTime(f * 4.5, start + 0.08);
+          filter.frequency.exponentialRampToValueAtTime(f * 2.2, start + duration);
+
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.linearRampToValueAtTime(vol / Math.sqrt(list.length), start + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(ctx.destination);
+
+          osc.start(start);
+          osc.stop(start + duration + 0.04);
+        });
+      });
+    }
+
+    // 타격감 있는 스네어/심벌 퍼커션 합성기
+    function playPercHit(delay = 0, duration = 0.18, vol = 0.14) {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+      const start = ctx.currentTime + delay;
+      const bufferSize = Math.floor(ctx.sampleRate * duration);
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.05));
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.setValueAtTime(400, start);
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(vol, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      noise.start(start);
+    }
+
+    function playQuestionChime(style) {
+      const s = style || state.quizState.chimeStyle || 'classic_dingdong';
+      if (s === 'mute') return;
+      if (s === 'classic_dingdong') {
+        playTone(659.25, 0.25, 'triangle', 0.22, 0);
+        playTone(523.25, 0.45, 'triangle', 0.22, 0.22);
+      } else if (s === 'quiz_show') {
+        playSynthBrass([523.25, 659.25, 783.99], 0.18, 0, 0.12);
+        playSynthBrass([587.33, 739.99, 880], 0.18, 0.16, 0.12);
+        playSynthBrass([659.25, 830.61, 987.77, 1318.5], 0.45, 0.32, 0.15);
+      } else if (s === 'arcade_coin') {
+        playTone(987.77, 0.09, 'square', 0.14, 0);
+        playTone(1318.51, 0.35, 'square', 0.14, 0.09);
+      } else if (s === 'grand_gong') {
+        playSynthBrass([130.81, 196.0, 261.63, 329.63], 0.9, 0, 0.18);
+      }
+    }
+
+    function playDrumrollSound() {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+      const totalHits = 24;
+      for (let i = 0; i < totalHits; i++) {
+        const progress = i / totalHits;
+        const delay = i * 0.055;
+        const freq = 115 + (i % 2) * 28 + progress * 45;
+        const vol = 0.06 + progress * 0.16;
+        playTone(freq, 0.055, 'triangle', vol, delay);
+      }
+      playTone(330, 0.28, 'sawtooth', 0.16, 1.34);
+      playTone(440, 0.32, 'triangle', 0.2, 1.36);
+    }
+
+    function playCorrectAnswerSound() {
+      playTone(523.25, 0.12, 'triangle', 0.2, 0);
+      playTone(659.25, 0.12, 'triangle', 0.2, 0.1);
+      playTone(783.99, 0.14, 'triangle', 0.22, 0.2);
+      playSynthBrass([523.25, 659.25, 783.99, 1046.5], 0.45, 0.32, 0.14);
+    }
+
+    function playWrongAnswerSound() {
+      playSynthBrass([196.0, 233.08, 277.18], 0.28, 0, 0.13);
+      playSynthBrass([185.0, 220.0, 261.63], 0.48, 0.26, 0.15);
+    }
+
+    function playVictoryMusic(style) {
+      const s = style || state.quizState.victoryMusicStyle || 'royal_fanfare';
+      if (s === 'mute') return;
+
+      if (s === 'royal_fanfare') {
+        // 웅장한 대관식 오케스트라 팡파르
+        playPercHit(0, 0.2, 0.18);
+        playSynthBrass([261.63, 329.63, 392.0, 523.25], 0.22, 0, 0.14);
+        playSynthBrass([261.63, 329.63, 392.0, 523.25], 0.22, 0.24, 0.14);
+        playSynthBrass([261.63, 329.63, 392.0, 523.25], 0.22, 0.48, 0.14);
+        playPercHit(0.72, 0.3, 0.22);
+        playSynthBrass([349.23, 440.0, 523.25, 698.46], 0.55, 0.72, 0.16);
+        playSynthBrass([392.0, 493.88, 587.33, 783.99], 0.55, 1.3, 0.16);
+        playPercHit(1.88, 0.45, 0.25);
+        playSynthBrass([261.63, 329.63, 392.0, 523.25, 659.25, 1046.5], 1.25, 1.88, 0.18);
+      } else if (s === 'jackpot_celebration') {
+        // 올림픽 금메달 영광의 축가
+        const chords = [
+          { f: [261.63, 329.63, 392.0, 523.25], d: 0.35, t: 0 },
+          { f: [392.0, 493.88, 587.33, 783.99], d: 0.35, t: 0.38 },
+          { f: [440.0, 523.25, 659.25, 880.0], d: 0.45, t: 0.76 },
+          { f: [349.23, 440.0, 523.25, 698.46], d: 0.4, t: 1.24 },
+          { f: [392.0, 493.88, 587.33, 783.99], d: 0.4, t: 1.68 },
+          { f: [261.63, 329.63, 392.0, 523.25, 1046.5], d: 1.2, t: 2.12 }
+        ];
+        chords.forEach((c) => {
+          playSynthBrass(c.f, c.d, c.t, 0.15);
+          playPercHit(c.t, 0.16, 0.14);
+        });
+      } else if (s === 'champion_anthem') {
+        // 스타디움 챔피언 앤섬 (We Are The Champions 감성 화성 진행)
+        playSynthBrass([261.63, 329.63, 392.0, 659.25], 0.55, 0, 0.15);
+        playSynthBrass([246.94, 392.0, 493.88, 587.33], 0.55, 0.58, 0.15);
+        playSynthBrass([220.0, 329.63, 440.0, 523.25], 0.6, 1.16, 0.15);
+        playSynthBrass([174.61, 349.23, 440.0, 698.46], 0.5, 1.8, 0.16);
+        playSynthBrass([196.0, 392.0, 493.88, 783.99], 0.5, 2.34, 0.16);
+        playPercHit(2.88, 0.4, 0.24);
+        playSynthBrass([261.63, 329.63, 392.0, 523.25, 1046.5], 1.4, 2.88, 0.19);
+      } else if (s === 'festival_finale') {
+        // 아케이드 그랜드 피날레 고속 아르페지오 + 브라스 피니시
+        const notes = [261.63, 329.63, 392.0, 523.25, 659.25, 783.99, 1046.5];
+        notes.forEach((n, idx) => {
+          playTone(n, 0.14, 'square', 0.14, idx * 0.08);
+        });
+        playPercHit(0.6, 0.25, 0.2);
+        playSynthBrass([261.63, 329.63, 392.0, 523.25, 1046.5], 0.3, 0.6, 0.16);
+        playPercHit(0.95, 0.4, 0.24);
+        playSynthBrass([261.63, 329.63, 392.0, 523.25, 659.25, 1046.5], 1.2, 0.95, 0.19);
+      }
+    }
+
+    function toggleBgmBtn() {
+      state.bgmPlaying = !state.bgmPlaying;
+      const btn = document.getElementById('admin-bgm-btn');
+      if (btn) {
+        btn.textContent = state.bgmPlaying ? '🔊 BGM 켜짐' : '🔇 BGM 켜기';
+        btn.className = state.bgmPlaying
+          ? 'px-2.5 py-1.5 rounded-xl bg-emerald-600 text-white font-black text-xs cursor-pointer'
+          : 'px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer';
+      }
+      if (bgmInterval) {
+        clearInterval(bgmInterval);
+        bgmInterval = null;
+      }
+      if (state.bgmPlaying) {
+        const pattern = [261.63, 329.63, 392.0, 329.63, 293.66, 349.23, 440.0, 349.23];
+        let step = 0;
+        bgmInterval = setInterval(() => {
+          if (!state.bgmPlaying) return;
+          playTone(pattern[step % pattern.length], 0.18, 'triangle', 0.045, 0);
+          step++;
+        }, 320);
+      }
+    }
+
+    function launchConfetti(doubleBurst = false) {
+      const layer = document.getElementById('floating-layer');
+      if (!layer) return;
+      const emojis = ['🎉', '✨', '🏆', '👑', '🎊', '⭐'];
+      const count = doubleBurst ? 36 : 20;
+      for (let i = 0; i < count; i++) {
+        const el = document.createElement('div');
+        el.className = 'reaction-float absolute text-2xl sm:text-3xl select-none';
+        el.style.left = Math.random() * 92 + 4 + '%';
+        el.style.bottom = (Math.random() * 25 + 5) + '%';
+        el.style.animationDelay = (Math.random() * 0.6) + 's';
+        el.textContent = emojis[i % emojis.length];
+        layer.appendChild(el);
+        setTimeout(() => el.remove(), 3000);
+      }
+    }
+
+    // ============================================================================
+    // 참가자 실시간 접속 상태 계산 (🟢온라인 / 🟡자리비움 / 🔴30초 이상 끊김)
+    // ============================================================================
+    function getParticipantPresenceStatus(p) {
+      if (!p) return { status: 'offline', label: '접속 끊김', dotClass: 'bg-rose-500', badgeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40' };
+      const serverNow = Date.now() + state.serverOffsetMs;
+      const lastSeen = Number(p.lastSeenAt || p.updatedAt || serverNow);
+      const disconnectedAt = Number(p.disconnectedAt || lastSeen);
+      const elapsedSec = Math.max(0, Math.floor((serverNow - (p.presenceState === 'offline' ? disconnectedAt : lastSeen)) / 1000));
+
+      if (p.presenceState === 'offline') {
+        if (elapsedSec >= OFFLINE_THRESHOLD_SEC) {
+          return {
+            status: 'offline',
+            elapsedSec,
+            label: `접속 끊김 (${elapsedSec}초)`,
+            dotClass: 'bg-rose-500',
+            badgeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+          };
+        }
+        return {
+          status: 'reconnecting',
+          elapsedSec,
+          label: `재연결 대기 (${elapsedSec}초)`,
+          dotClass: 'bg-amber-400 animate-pulse',
+          badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+        };
+      }
+
+      if (elapsedSec >= OFFLINE_THRESHOLD_SEC) {
+        return {
+          status: 'offline',
+          elapsedSec,
+          label: `응답 없음 (${elapsedSec}초)`,
+          dotClass: 'bg-rose-500',
+          badgeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+        };
+      }
+
+      if (p.presenceState === 'away') {
+        return {
+          status: 'away',
+          elapsedSec,
+          label: '자리 비움 (다른 화면)',
+          dotClass: 'bg-amber-400',
+          badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+        };
+      }
+
+      return {
+        status: 'online',
+        elapsedSec,
+        label: '온라인',
+        dotClass: 'bg-emerald-400',
+        badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+      };
+    }
+
+    // 내 접속 상태(온라인 / 자리비움 / 창 닫힘)를 서버에 즉시 보고
+    async function sendMyPresence(presenceState, useBeacon = false) {
+      if (state.role !== 'user' || !state.nickname) return;
+      const payload = JSON.stringify({
+        roomCode: ROOM_CODE,
+        action: 'PRESENCE_PING',
+        participantId: state.myId,
+        nickname: state.nickname,
+        presenceState
+      });
+      if (useBeacon && navigator.sendBeacon) {
+        navigator.sendBeacon('/sync', new Blob([payload], { type: 'application/json' }));
+        return;
+      }
+      try {
+        await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload
+        });
+      } catch (e) {}
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (state.role !== 'user') return;
+      if (document.visibilityState === 'hidden') {
+        sendMyPresence('away');
+      } else {
+        sendMyPresence('online');
+      }
+    });
+
+    window.addEventListener('pagehide', () => {
+      if (state.role === 'user') {
+        sendMyPresence('offline', true);
+      }
+    });
+
+    // 10초마다 온라인 하트비트 전송 (30초 기준 오프라인 판정을 정확하게 유지)
+    setInterval(() => {
+      if (state.role === 'user' && state.nickname) {
+        const currentVis = document.visibilityState === 'hidden' ? 'away' : 'online';
+        sendMyPresence(currentVis);
+      }
+    }, 10000);
+
+    // ============================================================================
+    // 타이머 DOM 부분 업데이트 (매초 전체 화면 리렌더링을 방지해 클릭 씹힘 & 스크롤 튐 0%)
+    // ============================================================================
+    function updateLiveTimerDomOnly() {
+      const serverNow = Date.now() + state.serverOffsetMs;
+      state.nowTick = serverNow;
+
+      // 1) 문제 제한시간 카운트다운 및 게이지 바 부분 업데이트
+      if (state.quizState.status === 'question_active' && state.quizState.revealAt) {
+        const remainMs = Math.max(0, Number(state.quizState.revealAt) - serverNow);
+        const remainSec = Math.ceil(remainMs / 1000);
+        state.remainingSeconds = remainSec;
+
+        const totalSec = Math.max(1, Number(state.quizState.countdownDuration || 10));
+        const pct = Math.max(0, Math.min(100, (remainMs / (totalSec * 1000)) * 100));
+
+        const userTimerEl = document.getElementById('user-live-timer');
+        if (userTimerEl) {
+          userTimerEl.textContent = remainSec > 0 ? `${remainSec}초` : '판정 중...';
+          userTimerEl.className =
+            remainSec <= 3
+              ? 'text-2xl sm:text-3xl font-black text-rose-400 animate-pulse tabular-nums'
+              : 'text-2xl sm:text-3xl font-black text-amber-300 tabular-nums';
+        }
+
+        const userBarEl = document.getElementById('user-timer-progress-bar');
+        if (userBarEl) {
+          userBarEl.style.width = `${pct.toFixed(1)}%`;
+          userBarEl.className =
+            remainSec <= 3
+              ? 'h-full bg-rose-500 transition-all duration-150'
+              : remainSec <= 6
+              ? 'h-full bg-amber-400 transition-all duration-150'
+              : 'h-full bg-emerald-400 transition-all duration-150';
+        }
+
+        const adminTimerEl = document.getElementById('admin-live-timer');
+        if (adminTimerEl) {
+          adminTimerEl.textContent = remainSec > 0 ? `${remainSec}초 남음` : '판정 중...';
+        }
+      } else {
+        state.remainingSeconds = null;
+      }
+
+      // 2) 다음 문제 자동 시작 카운트다운 부분 업데이트
+      if (state.quizState.status === 'answer_revealed' && state.quizState.nextAutoQuestionAt) {
+        const nextRemain = Math.max(0, Math.ceil((Number(state.quizState.nextAutoQuestionAt) - serverNow) / 1000));
+        state.autoNextRemainingSec = nextRemain;
+        const msg = `⏳ ${nextRemain}초 후 다음 문제가 시작됩니다`;
+        const pBadge = document.getElementById('user-auto-next-popup-badge');
+        if (pBadge) pBadge.textContent = msg;
+        const mBadge = document.getElementById('user-auto-next-main-badge');
+        if (mBadge) mBadge.textContent = msg;
+        const aBadge = document.getElementById('admin-auto-next-badge');
+        if (aBadge) aBadge.textContent = `다음 자동 문제까지 ${nextRemain}초`;
+      } else {
+        state.autoNextRemainingSec = null;
+      }
+
+      // 3) 관리자 화면 참가자 접속 끊김 경과 초(30초 기준) 배지 부분 업데이트
+      if (state.role === 'admin') {
+        state.participants.forEach((p) => {
+          const badgeEl = document.getElementById(`presence-badge-${p.id}`);
+          const dotEl = document.getElementById(`presence-dot-${p.id}`);
+          if (badgeEl || dotEl) {
+            const pres = getParticipantPresenceStatus(p);
+            if (badgeEl) {
+              badgeEl.textContent = pres.label;
+              badgeEl.className = `px-2 py-0.5 rounded-full text-[11px] font-bold border ${pres.badgeClass}`;
+            }
+            if (dotEl) {
+              dotEl.className = `w-2.5 h-2.5 rounded-full shrink-0 ${pres.dotClass}`;
+            }
+          }
+        });
+      }
+    }
+
+    setInterval(updateLiveTimerDomOnly, 200);
+
+    // ============================================================================
+    // 서버 상태 동기화 (SSE 실시간 스트림 우선 + 스마트 백업 폴링)
+    // ============================================================================
+    let lastQuestionKey = '';
+    let lastRevealKey = '';
+    let lastNoticeId = '';
+    let lastReactionId = '';
+    let sseConnected = false;
+
+    function applyIncomingRoomData(data) {
+      if (data && data.roomDeleted) {
+        const delTitle = data.deletedTitle || state.currentRoomTitle || '해당';
+        if (state.role !== 'home') {
+          state.role = 'home';
+          state.participants = [];
+          localStorage.setItem('ox_role_v3', 'home');
+          fetchOxRooms();
+          showUserToast(`📢 [${delTitle}] 방이 삭제되었습니다.`);
+          render();
+        }
+        return;
+      }
+      if (!data || !data.quizState) return;
+      if (data.hostClientId) {
+        state.currentRoomHostClientId = data.hostClientId;
+      }
+      if (typeof data.hostNickname === 'string') {
+        state.currentRoomHostNickname = data.hostNickname;
+      }
+      if (typeof data.maxPlayers === 'number') {
+        state.currentRoomMaxPlayers = data.maxPlayers;
+      }
+      if (typeof data.entryFee === 'number') state.entryFee = data.entryFee;
+      if (typeof data.payoutMode === 'string') state.payoutMode = data.payoutMode;
+      if (typeof data.roomFundingMode === 'string') state.roomFundingMode = data.roomFundingMode;
+      if (typeof data.prizePool === 'number') state.prizePool = data.prizePool;
+      if (Array.isArray(data.kickedIds) && data.kickedIds.includes(state.myId) && state.role !== 'home') {
+        state.role = 'home';
+        state.participants = [];
+        localStorage.setItem('ox_role_v3', 'home');
+        fetchOxRooms();
+        showUserToast('🚫 방장에 의해 방에서 강퇴되었습니다.');
+        render();
+        return;
+      }
+      if (typeof data.serverNow === 'number') {
+        state.serverOffsetMs = data.serverNow - Date.now();
+      }
+      if (typeof data.usedQuestionCount === 'number') {
+        state.usedQuestionCount = data.usedQuestionCount;
+      }
+      if (typeof data.unusedBankCount === 'number') {
+        state.unusedBankCount = data.unusedBankCount;
+      }
+
+      const prevStatus = state.quizState.status;
+      const incomingState = data.quizState;
+      const incomingParticipants = Array.isArray(data.participants) ? data.participants : [];
+
+      // 구조적 변경 여부 판단 (단순 lastSeenAt 갱신만 있을 때는 입력창/스크롤 방해 안 함)
+      const prevStructSig = JSON.stringify({
+        s: state.quizState.status,
+        q: state.quizState.question,
+        qid: state.quizState.questionId,
+        rn: state.quizState.roundNumber,
+        w: state.quizState.winnerNickname,
+        fc: state.quizState.finalChampionNickname,
+        ap: state.quizState.autoPlayEnabled,
+        aps: state.quizState.autoPlayStopAfterCurrent,
+        apd: state.quizState.autoPlayQuestionDurationSec,
+        api: state.quizState.autoPlayIntervalSec,
+        tw: state.quizState.targetWins,
+        dr: state.quizState.drumrollEnabled,
+        cs: state.quizState.chimeStyle,
+        vm: state.quizState.victoryMusicStyle,
+        p: state.participants.map((u) => [u.id, u.nickname, u.isAlive, u.ready, u.choice, u.spectatorChoice, u.wins, u.presenceState]), ef: state.entryFee, rfm: state.roomFundingMode, pp: state.prizePool
+      });
+
+      const nextStructSig = JSON.stringify({
+        s: incomingState.status,
+        q: incomingState.question,
+        qid: incomingState.questionId,
+        rn: incomingState.roundNumber,
+        w: incomingState.winnerNickname,
+        fc: incomingState.finalChampionNickname,
+        ap: incomingState.autoPlayEnabled,
+        aps: incomingState.autoPlayStopAfterCurrent,
+        apd: incomingState.autoPlayQuestionDurationSec,
+        api: incomingState.autoPlayIntervalSec,
+        tw: incomingState.targetWins,
+        dr: incomingState.drumrollEnabled,
+        cs: incomingState.chimeStyle,
+        vm: incomingState.victoryMusicStyle,
+        p: incomingParticipants.map((u) => [u.id, u.nickname, u.isAlive, u.ready, u.choice, u.spectatorChoice, u.wins, u.presenceState]), ef: data.entryFee, rfm: data.roomFundingMode, pp: data.prizePool
+      });
+
+      state.quizState = incomingState;
+      state.participants = incomingParticipants;
+      state.notices = Array.isArray(data.notices) ? data.notices : [];
+
+      // 관리자 초안(draft)이 비어있고 서버에 문제가 있을 때만 초기 동기화 (준비 중인 문제가 이전 문제로 덮어써지는 현상 완벽 방지!)
+      if (!state.draftQuestion && incomingState.question && incomingState.status === 'question_active') {
+        state.draftQuestion = incomingState.question;
+        state.draftAnswer = incomingState.correctAnswer || 'O';
+        state.draftExplanation = incomingState.explanation || '';
+      }
+
+      // 1) 새 문제 출제 감지 -> 출제 차임벨만 깔끔하게 재생 (화면 가리는 생존자 스플래시 배너 제거)
+      const qKey = `${incomingState.roundNumber}_${incomingState.questionId}_${incomingState.question}`;
+      if (incomingState.status === 'question_active' && qKey !== lastQuestionKey) {
+        lastQuestionKey = qKey;
+        state.isDrumrolling = false;
+        state.resultPopupTab = 'auto';
+        state.draftQuestion = incomingState.question || state.draftQuestion;
+        state.draftAnswer = incomingState.correctAnswer || state.draftAnswer;
+        state.draftExplanation = incomingState.explanation || state.draftExplanation;
+        playQuestionChime(incomingState.chimeStyle);
+      }
+
+      // 2) 정답 발표 감지 -> 두구두구 드럼롤(1.5초) 후 결과 팝업 & 사운드 재생
+      const rKey = `${incomingState.roundNumber}_${incomingState.questionId}_${incomingState.status}`;
+      if (incomingState.status === 'answer_revealed' && rKey !== lastRevealKey && prevStatus === 'question_active') {
+        lastRevealKey = rKey;
+        state.dismissedResultKey = null;
+        state.resultPopupTab = (incomingState.finalChampionNickname || incomingState.winnerNickname) ? 'winner' : 'list';
+
+        const triggerRevealEffects = () => {
+          if (incomingState.finalChampionNickname || incomingState.winnerNickname) {
+            playVictoryMusic(incomingState.victoryMusicStyle);
+            launchConfetti(Boolean(incomingState.finalChampionNickname));
+          } else if (state.role === 'user') {
+            const me = state.participants.find((p) => p.id === state.myId);
+            if (me) {
+              const myAns = me.choice || me.spectatorChoice;
+              if (myAns === incomingState.correctAnswer || incomingState.allWrongRevived) {
+                playCorrectAnswerSound();
+              } else {
+                playWrongAnswerSound();
+              }
+            }
+          } else {
+            playCorrectAnswerSound();
+          }
+          render();
+        };
+
+        if (incomingState.drumrollEnabled !== false) {
+          state.isDrumrolling = true;
+          playDrumrollSound();
+          render();
+          setTimeout(() => {
+            state.isDrumrolling = false;
+            triggerRevealEffects();
+          }, 1500);
+        } else {
+          triggerRevealEffects();
+        }
+      }
+
+      // 3) 새 공지 토스트 감지
+      if (state.notices.length > 0) {
+        const latestNotice = state.notices[state.notices.length - 1];
+        if (latestNotice && latestNotice.id !== lastNoticeId) {
+          lastNoticeId = latestNotice.id;
+          showUserToast(`📢 ${latestNotice.text}`);
+        }
+      }
+
+      // 4) 새 이모지 리액션 플로팅
+      if (Array.isArray(data.reactions) && data.reactions.length > 0) {
+        const latestRx = data.reactions[data.reactions.length - 1];
+        if (latestRx && latestRx.id !== lastReactionId) {
+          lastReactionId = latestRx.id;
+          spawnFloatingReaction(latestRx.emoji, latestRx.nickname);
+        }
+      }
+
+      updateLiveTimerDomOnly();
+      if (prevStructSig !== nextStructSig) {
+        render();
+      }
+    }
+
+    let activeEventSource = null;
+    function connectSSE() {
+      try {
+        if (activeEventSource) {
+          try { activeEventSource.close(); } catch (_) {}
+          activeEventSource = null;
+        }
+        const es = new EventSource(`/events?roomCode=${ROOM_CODE}&participantId=${encodeURIComponent(state.myId)}&role=${encodeURIComponent(state.role)}`);
+        activeEventSource = es;
+        es.onopen = () => {
+          sseConnected = true;
+        };
+        es.onmessage = (evt) => {
+          try {
+            const data = JSON.parse(evt.data);
+            applyIncomingRoomData(data);
+          } catch (e) {}
+        };
+        es.onerror = () => {
+          sseConnected = false;
+          es.close();
+          setTimeout(connectSSE, 2000);
+        };
+      } catch (e) {
+        sseConnected = false;
+      }
+    }
+
+    async function pollRoomState() {
+      try {
+        const res = await fetch(`/sync?roomCode=${ROOM_CODE}&participantId=${encodeURIComponent(state.myId)}&role=${encodeURIComponent(state.role)}`);
+        if (res.ok) {
+          const data = await res.json();
+          applyIncomingRoomData(data);
+        }
+      } catch (e) {}
+    }
+
+    connectSSE();
+    pollRoomState();
+    // SSE가 정상 연결되어 있을 때는 4초 간격 백업 폴링, 끊겼을 때만 1초 폴링으로 네트워크 최적화!
+    setInterval(() => {
+      if (!sseConnected) pollRoomState();
+    }, 1100);
+    setInterval(() => {
+      if (sseConnected) pollRoomState();
+    }, 4500);
+
+    // ============================================================================
+    // 유저/관리자 액션 핸들러
+    // ============================================================================
+    function showAdminToast(msg) {
+      state.adminToast = msg;
+      render();
+      setTimeout(() => {
+        if (state.adminToast === msg) {
+          state.adminToast = '';
+          render();
+        }
+      }, 3200);
+    }
+
+    function showUserToast(msg) {
+      if (typeof msg === "string" && (msg.indexOf("이미 생성한 방") !== -1 || msg.indexOf("이미 입장 중인 방") !== -1) && window.ArcadeMyRooms) { window.ArcadeMyRooms.openConflictPopup(msg); }
+      state.userToast = msg;
+      render();
+      setTimeout(() => {
+        if (state.userToast === msg) {
+          state.userToast = '';
+          render();
+        }
+      }, 3800);
+    }
+
+    function spawnFloatingReaction(emoji, nickname) {
+      const layer = document.getElementById('floating-layer');
+      if (!layer) return;
+      const el = document.createElement('div');
+      el.className = 'reaction-float absolute flex flex-col items-center pointer-events-none select-none';
+      el.style.left = (Math.random() * 76 + 12) + '%';
+      el.style.bottom = '24px';
+      el.innerHTML = `
+        <span class="text-3xl sm:text-4xl drop-shadow-md">${emoji}</span>
+        <span class="px-2 py-0.5 rounded-full bg-slate-900/90 border border-slate-700 text-[10px] font-bold text-slate-200">${escapeHtml(nickname || '')}</span>
+      `;
+      layer.appendChild(el);
+      setTimeout(() => el.remove(), 2600);
+    }
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    async function fetchOxRooms() {
+      try {
+        const res = await fetch('/ox-rooms');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.rooms)) {
+            state.roomsList = data.rooms;
+            if (state.role === 'home') render();
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 새 방 만들기 -> AUTO 모드는 방장도 참여자+컨트롤바 화면, MANUAL 모드는 기존 관리자(MC) 화면으로 진입
+    async function createOxRoom(e) {
+      if (e) e.preventDefault();
+      const input = document.getElementById('ox-new-room-title');
+      const maxInput = document.getElementById('ox-new-room-max');
+      const pwInput = document.getElementById('ox-new-room-pw');
+      const fundingModeInput = document.getElementById('ox-new-room-funding-mode');
+      const feeInput = document.getElementById('ox-new-room-fee');
+      const customFeeInput = document.getElementById('ox-new-room-custom-fee');
+      const payoutInput = document.getElementById('ox-new-room-payout');
+      const roomFundingModeVal = fundingModeInput && fundingModeInput.value === 'HOST_EVENT' ? 'HOST_EVENT' : 'ENTRY_FEE';
+      const entryFeeVal = (feeInput && feeInput.value === 'CUSTOM')
+        ? Math.max(0, Math.floor(Number(customFeeInput ? customFeeInput.value : 0) || 0))
+        : (Number(feeInput ? feeInput.value : 0) || 0);
+      const payoutModeVal = payoutInput ? payoutInput.value : 'WINNER_TAKES_ALL';
+      const rawTitle = (input ? input.value : '').trim();
+      const maxPlayersVal = Math.max(0, Math.min(100, Number(maxInput ? maxInput.value : 0) || 0));
+      const pwVal = pwInput ? pwInput.value.trim() : '';
+      if (pwVal && !/^\d{4}$/.test(pwVal)) {
+        showUserToast('⚠️ 비밀번호는 숫자 4자리로 입력해주세요.');
+        return;
+      }
+      const hostNick = (window.ArcadeAuth && window.ArcadeAuth.getProfile()?.nickname)
+        || state.nickname
+        || localStorage.getItem('arcade_auth_nickname')
+        || '방장';
+      const randomCode = String(Math.floor(1000 + Math.random() * 9000));
+      const hostNickForTitle = (state.hostNickname || localStorage.getItem('arcade_auth_nickname') || '방장').trim();
+      const finalTitle = rawTitle || `${hostNickForTitle}님의 방`;
+      const chosenMode = state.newRoomMode === 'MANUAL' ? 'MANUAL' : 'AUTO';
+
+      try {
+        const res = await fetch('/ox-rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode: randomCode,
+            title: finalTitle,
+            hostClientId: state.myId,
+            hostNickname: hostNick,
+            maxPlayers: maxPlayersVal,
+            password: pwVal,
+            roomFundingMode: roomFundingModeVal,
+            entryFee: entryFeeVal,
+            payoutMode: payoutModeVal,
+            roomMode: chosenMode,
+            autoPlayTopic: state.newRoomTopic,
+            autoPlayDifficultyMode: state.newRoomDifficulty,
+            autoPlayQuestionDurationSec: Number(state.newRoomDuration || 0),
+            targetWins: Number(state.newRoomTargetWins || 1)
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          showUserToast(data.error || data.message || '방 생성에 실패했습니다.');
+          return;
+        }
+        state.currentRoomHostNickname = hostNick;
+        state.currentRoomMaxPlayers = maxPlayersVal;
+        state.currentRoomPassword = pwVal;
+        ROOM_CODE = data.roomCode || randomCode;
+        state.currentRoomTitle = data.title || finalTitle;
+        state.currentRoomHostClientId = data.hostClientId || state.myId;
+        if (Array.isArray(data.rooms)) state.roomsList = data.rooms;
+      } catch (err) {
+        showUserToast('⚠️ 서버와 연결할 수 없어 방을 생성하지 못했습니다.');
+        return;
+      }
+
+      localStorage.setItem('ox_room_code_v3', ROOM_CODE);
+      localStorage.setItem('ox_room_title_v3', state.currentRoomTitle);
+      getAudioCtx();
+
+      if (chosenMode === 'MANUAL') {
+        state.role = 'admin';
+        localStorage.setItem('ox_role_v3', 'admin');
+        connectSSE();
+        await pollRoomState();
+        showAdminToast(`👑 [${state.currentRoomTitle}] 직접 출제 방이 생성되었습니다!`);
+        render();
+      } else {
+        if (window.ArcadeAuth) {
+          const prof = window.ArcadeAuth.getProfile();
+          if (prof && prof.nickname) {
+            state.nickname = prof.nickname;
+            localStorage.setItem('ox_nick_v3', prof.nickname);
+          }
+        }
+        if (!state.nickname) {
+          window.location.href = '/';
+          return;
+        }
+        connectSSE();
+        await pollRoomState();
+        await enterGame(null);
+        showUserToast(`👑 [${state.currentRoomTitle}] 자동 출제 방이 생성되었습니다!`);
+      }
+    }
+
+    async function hostStartAutoGame() {
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'START_AUTO_PLAY',
+            roomCode: ROOM_CODE,
+            participantId: state.myId,
+            autoPlayTopic: state.quizState.autoPlayTopic || '일반상식',
+            autoPlayDifficultyMode: state.quizState.autoPlayDifficultyMode || 'auto',
+            autoPlayQuestionDurationSec: Number(state.quizState.autoPlayQuestionDurationSec || 0)
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          showUserToast(data.error || data.message || '⚠️ 준비 완료 상태인 참가자가 부족합니다.');
+          return;
+        }
+        if (data && data.quizState) applyIncomingRoomData(data);
+        showUserToast('🚀 자동 출제 게임을 시작합니다! (미준비 인원은 자동 관전 전환)');
+      } catch (_) {
+        showUserToast('게임 시작 요청 실패');
+      }
+    }
+
+    async function hostUpdateAutoSetting(patch) {
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'HOST_UPDATE_SETTINGS',
+            roomCode: ROOM_CODE,
+            participantId: state.myId,
+            ...patch
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || data.ok === false) {
+          showUserToast(data.error || '라운드 진행 중에는 설정을 변경할 수 없습니다.');
+          render();
+          return;
+        }
+        if (data && data.quizState) applyIncomingRoomData(data);
+        if (patch.roomMode === 'MANUAL') {
+          state.role = 'admin';
+          localStorage.setItem('ox_role_v3', 'admin');
+          state.adminToast = '🎤 직접 출제(관리자 MC) 모드로 전환되었습니다.';
+          render();
+          setTimeout(() => { state.adminToast = ''; render(); }, 3000);
+          return;
+        }
+        if (patch.roomMode === 'AUTO') {
+          state.role = 'user';
+          localStorage.setItem('ox_role_v3', 'user');
+          await enterGame(null);
+          showUserToast('🤖 자동 출제(방장 참여) 모드로 전환되었습니다.');
+          return;
+        }
+        showUserToast('⚙️ 방 설정이 업데이트되었습니다.');
+      } catch (err) {
+        console.error('hostUpdateAutoSetting error:', err);
+        showUserToast('설정 변경 실패: ' + (err && err.message ? err.message : '네트워크 오류'));
+      }
+    }
+
+    async function hostPrepareNextRound() {
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'HOST_NEXT_ROUND',
+            roomCode: ROOM_CODE,
+            participantId: state.myId
+          })
+        });
+        const data = await res.json();
+        if (data && data.quizState) applyIncomingRoomData(data);
+        showUserToast('🔄 다음 라운드 대기 상태입니다. 설정을 변경하거나 게임을 시작하세요!');
+      } catch (_) {
+        showUserToast('다음 라운드 준비 실패');
+      }
+    }
+
+    async function deleteOxRoom() {
+      const isRoundRunning = Boolean(state.quizState.gameStarted && !state.quizState.winnerNickname && !state.quizState.finalChampionNickname);
+      const confirmTxt = isRoundRunning
+        ? '⚠️ 현재 게임 라운드가 진행 중입니다!\n지금 방을 삭제하면 진행 중인 판이 강제 종료됩니다. 정말 방을 삭제하시겠습니까?'
+        : '정말 이 방을 삭제하시겠습니까? 방 안의 모든 참가자가 퇴장됩니다.';
+      if (!window.confirm(confirmTxt)) return;
+      const targetCode = ROOM_CODE;
+      const targetTitle = state.currentRoomTitle || `방 #${targetCode}`;
+      try {
+        await fetch('/ox-rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'DELETE_ROOM', roomCode: targetCode })
+        });
+      } catch (_) {}
+      state.roomsList = state.roomsList.filter((r) => r.roomCode !== targetCode);
+      state.participants = [];
+      state.role = 'home';
+      localStorage.setItem('ox_role_v3', 'home');
+      showUserToast(`🗑️ [${targetTitle}] 방이 삭제되었습니다.`);
+      fetchOxRooms();
+      render();
+    }
+
+    // 열려 있는 방 클릭 -> 방장 본인이면 모드(MANUAL/AUTO)에 맞춰 방장 권한으로 복귀, 일반 유저는 즉시 참가
+    async function joinOxRoomAsUser(targetRoomCode, targetTitle) {
+      const targetRm = (state.roomsList || []).find((r) => r.roomCode === targetRoomCode);
+      const isHostOfRm = targetRm && targetRm.hostClientId && targetRm.hostClientId === state.myId;
+      if (targetRm && !isHostOfRm && Number(targetRm.entryFee) > 0) {
+        const feeNum = Number(targetRm.entryFee);
+        const msg = targetRm.roomFundingMode === 'HOST_EVENT'
+          ? `🎁 [${targetTitle}] 방장 이벤트방입니다!\n총 상금: ${feeNum.toLocaleString()} 스타 (참가비 무료 0 스타)\n입장하시겠습니까?`
+          : `⭐ [${targetTitle}] 방은 입장비 ${feeNum.toLocaleString()} 스타가 필요한 방입니다.\n(게임 시작 시 준비 완료한 참가자만 스타가 차감됩니다)\n입장하시겠습니까?`;
+        if (!window.confirm(msg)) return;
+      }
+      ROOM_CODE = String(targetRoomCode || '1004');
+      state.currentRoomTitle = targetTitle || `OX 서바이벌 방 #${ROOM_CODE}`;
+      localStorage.setItem('ox_room_code_v3', ROOM_CODE);
+      localStorage.setItem('ox_room_title_v3', state.currentRoomTitle);
+
+      const rm = state.roomsList.find((r) => String(r.roomCode) === ROOM_CODE);
+      const isHost = Boolean(rm && rm.hostClientId && rm.hostClientId === state.myId);
+      state.currentRoomHostClientId = rm ? rm.hostClientId : null;
+      state.currentRoomHostNickname = rm ? (rm.hostNickname || '') : '';
+      state.currentRoomMaxPlayers = rm ? (rm.maxPlayers || 0) : 0;
+
+      let enteredPw = '';
+      if (!isHost && rm && rm.hasPassword) {
+        const pwPrompt = prompt(`[${state.currentRoomTitle}] 방 비밀번호(숫자 4자리)를 입력해주세요:`);
+        if (pwPrompt === null) {
+          backToRoomLobby();
+          return;
+        }
+        enteredPw = String(pwPrompt).trim();
+        if (!/^\d{4}$/.test(enteredPw)) {
+          showUserToast('⚠️ 비밀번호는 숫자 4자리여야 합니다.');
+          backToRoomLobby();
+          return;
+        }
+        try {
+          const vRes = await fetch('/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'VERIFY_ROOM_PASSWORD',
+              roomCode: ROOM_CODE,
+              participantId: state.myId,
+              password: enteredPw
+            })
+          });
+          if (!vRes.ok) {
+            const vData = await vRes.json().catch(() => ({}));
+            showUserToast(`⚠️ ${vData.message || '방 비밀번호가 일치하지 않습니다.'}`);
+            backToRoomLobby();
+            return;
+          }
+        } catch (_) {}
+      }
+      state.currentRoomPassword = enteredPw;
+
+      if (isHost && rm.roomMode === 'MANUAL') {
+        getAudioCtx();
+        state.role = 'admin';
+        localStorage.setItem('ox_role_v3', 'admin');
+        connectSSE();
+        await pollRoomState();
+        showAdminToast(`👑 방장 권한으로 [${state.currentRoomTitle}]에 복귀했습니다.`);
+        render();
+        return;
+      }
+
+      if (window.ArcadeAuth) {
+        const prof = window.ArcadeAuth.getProfile();
+        if (prof && prof.nickname) {
+          state.nickname = prof.nickname;
+          localStorage.setItem('ox_nick_v3', prof.nickname);
+        }
+      }
+
+      if (!state.nickname) {
+        window.location.href = '/';
+        return;
+      }
+
+      connectSSE();
+      await pollRoomState();
+      await enterGame(null);
+    }
+
+    function backToRoomLobby() {
+      state.role = 'home';
+      localStorage.setItem('ox_role_v3', 'home');
+      fetchOxRooms();
+      render();
+    }
+
+    async function enterGame(e) {
+      if (e) e.preventDefault();
+      const input = document.getElementById('nickname-input');
+      const nick = (input ? input.value : state.nickname).trim();
+      if (!nick) {
+        showUserToast('닉네임을 입력해 주세요!');
+        return;
+      }
+      getAudioCtx();
+      state.nickname = nick;
+      state.role = 'user';
+      localStorage.setItem('ox_nick_v3', nick);
+      localStorage.setItem('ox_role_v3', 'user');
+
+      const existing = state.participants.find((p) => p.id === state.myId);
+      const isMidGameJoin = state.quizState.gameStarted && !existing;
+
+      const myObj = {
+        id: state.myId,
+        nickname: nick,
+        isAlive: existing ? existing.isAlive : !isMidGameJoin,
+        choice: existing ? existing.choice : null,
+        spectatorChoice: existing ? existing.spectatorChoice : null,
+        questionId: state.quizState.questionId || 1,
+        wins: existing ? Number(existing.wins || 0) : 0,
+        presenceState: 'online',
+        explicitRejoin: true,
+        lastSeenAt: Date.now()
+      };
+
+      const res = await fetch('/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode: ROOM_CODE,
+          roomPassword: state.currentRoomPassword || '',
+          participants: [myObj]
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        showUserToast(`⚠️ ${errData.message || '방 입장에 실패했습니다.'}`);
+        backToRoomLobby();
+        return;
+      }
+      const data = await res.json();
+      applyIncomingRoomData(data);
+      render();
+    }
+
+
+    async function toggleMySpectatorMode(wantSpectator) {
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'TOGGLE_SPECTATOR_PREF',
+            roomCode: ROOM_CODE,
+            participantId: state.myId,
+            spectatorOnly: Boolean(wantSpectator)
+          })
+        });
+        if (res.ok) {
+          applyIncomingRoomData(await res.json());
+          showUserToast(wantSpectator ? '👀 관전 모드로 전환되었습니다.' : '🟢 게임 참여 모드로 전환되었습니다.');
+        }
+      } catch (_) {}
+    }
+
+    // 참가자 닉네임 변경 또는 방 나가기
+    async function changeMyNickname() {
+      const input = document.getElementById('change-nick-input');
+      if (!input) return;
+      const newNick = input.value.trim();
+      if (!newNick) return;
+      state.nickname = newNick;
+      localStorage.setItem('ox_nick_v3', newNick);
+      state.showNicknameModal = false;
+
+      const me = state.participants.find((p) => p.id === state.myId);
+      if (me) {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode: ROOM_CODE,
+            participants: [{ ...me, nickname: newNick, updatedAt: Date.now() }]
+          })
+        });
+        if (res.ok) applyIncomingRoomData(await res.json());
+      }
+      showUserToast(`닉네임이 [${newNick}](으)로 변경되었습니다.`);
+      render();
+    }
+
+    async function toggleMyReadyState() {
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'TOGGLE_READY',
+            roomCode: ROOM_CODE,
+            participantId: state.myId
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          showUserToast(data.message || data.error || '준비 상태 변경 실패');
+          return;
+        }
+        applyIncomingRoomData(data);
+        const meNow = (data.participants || []).find((p) => p.id === state.myId);
+        showUserToast(meNow && meNow.ready ? '✅ 다시하기를 선택하셨습니다!' : '⏳ 다시하기가 취소되었습니다. (미동의 시 자동 관전 전환)');
+      } catch (_) {}
+    }
+
+    async function leaveGameAsUser() {
+      const me = state.participants.find((p) => p.id === state.myId);
+      const isRoundActive = Boolean(state.quizState.gameStarted && !state.quizState.winnerNickname && !state.quizState.finalChampionNickname);
+      const isAlivePlayer = Boolean(me && !me.spectatorOnly && me.isAlive !== false);
+      const fee = Number(state.entryFee || 0);
+      let msg = '정말 방에서 나가시겠습니까?';
+      if (isRoundActive && isAlivePlayer) {
+        msg = fee > 0
+          ? `⚠️ 현재 스타(${fee.toLocaleString()} 스타)가 걸린 OX 서바이벌이 진행 중입니다!\n지금 나가면 즉시 기권패(탈락) 처리되어 걸어둔 입장비 스타를 잃게 됩니다.\n정말 기권하고 나가시겠습니까?`
+          : '⚠️ 현재 게임이 진행 중입니다! 지금 나가면 즉시 기권 탈락 처리됩니다.\n정말 나가시겠습니까?';
+      }
+      if (!window.confirm(msg)) return;
+      await fetch('/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode: ROOM_CODE,
+          participants: [{ id: state.myId, removed: true }]
+        })
+      }).catch(() => {});
+      backToRoomLobby();
+    }
+
+    function exitToHome() {
+      backToRoomLobby();
+    }
+
+    function openAdminModal() {
+      state.showAdminPwModal = true;
+      render();
+      setTimeout(() => {
+        const pwInput = document.getElementById('admin-pw-input');
+        if (pwInput) pwInput.focus();
+      }, 50);
+    }
+
+    function submitAdminPw(e) {
+      if (e) e.preventDefault();
+      const pwInput = document.getElementById('admin-pw-input');
+      const val = (pwInput ? pwInput.value : '').trim();
+      if (val === '2601') {
+        getAudioCtx();
+        state.showAdminPwModal = false;
+        state.role = 'admin';
+        localStorage.setItem('ox_role_v3', 'admin');
+        render();
+      } else {
+        showUserToast('비밀번호가 일치하지 않습니다.');
+      }
+    }
+
+    // O/X 선택 (생존자 정식 선택 + 관전자 모의 예측 투표 모두 지원 & 3회 재전송 보장)
+    async function selectOX(choice) {
+      if (state.quizState.status !== 'question_active') return;
+      getAudioCtx();
+      playTone(choice === 'O' ? 659.25 : 493.88, 0.1, 'triangle', 0.16, 0);
+
+      const me = state.participants.find((p) => p.id === state.myId);
+      const isSpectator = me && me.isAlive === false;
+
+      if (me) {
+        if (isSpectator) {
+          me.spectatorChoice = choice;
+        } else {
+          me.choice = choice;
+        }
+        me.questionId = state.quizState.questionId;
+      }
+      render();
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const res = await fetch('/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              roomCode: ROOM_CODE,
+              action: 'PICK_OX',
+              participantId: state.myId,
+              nickname: state.nickname,
+              choice,
+              isSpectator,
+              questionId: state.quizState.questionId
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            applyIncomingRoomData(data);
+            break;
+          }
+        } catch (err) {
+          await new Promise((r) => setTimeout(r, 260));
+        }
+      }
+    }
+
+    async function sendReaction(emoji) {
+      getAudioCtx();
+      spawnFloatingReaction(emoji, state.nickname || '익명');
+      try {
+        await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode: ROOM_CODE,
+            reaction: {
+              id: 'rx_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+              emoji,
+              nickname: state.nickname || '참가자'
+            }
+          })
+        });
+      } catch (e) {}
+    }
+
+    async function sendAdminNotice(e) {
+      if (e) e.preventDefault();
+      const input = document.getElementById('admin-notice-input');
+      if (!input) return;
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      input.focus();
+
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode: ROOM_CODE,
+            notice: {
+              id: 'nt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+              text,
+              createdAt: Date.now()
+            }
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          applyIncomingRoomData(data);
+        }
+      } catch (err) {}
+      setTimeout(() => {
+        const again = document.getElementById('admin-notice-input');
+        if (again) again.focus();
+      }, 20);
+    }
+
+    // 관리자: 참가자 개별 제어 (생존/탈락 토글, 승수 ±1, 강퇴, 30초 이상 오프라인 일괄 정리)
+    async function adminControlParticipant(targetId, subAction) {
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode: ROOM_CODE,
+            action: 'ADMIN_PARTICIPANT_CONTROL',
+            targetId,
+            subAction
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          applyIncomingRoomData(data);
+        }
+      } catch (e) {}
+    }
+
+    async function adminPruneOfflineParticipants() {
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode: ROOM_CODE,
+            action: 'ADMIN_PRUNE_OFFLINE'
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          applyIncomingRoomData(data);
+          showAdminToast(`30초 이상 접속이 끊긴 인원을 정리했습니다 (제거: ${data.removedCount || 0}명)`);
+        }
+      } catch (e) {}
+    }
+
+    // 관리자: 자동 진행 시작 / 정지 예약 토글
+    async function toggleAutoPlayMode() {
+      getAudioCtx();
+      const isCurrentlyOn = Boolean(state.quizState.autoPlayEnabled);
+      const action = isCurrentlyOn ? 'STOP_AUTO_PLAY' : 'START_AUTO_PLAY';
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode: ROOM_CODE,
+            action,
+            autoPlayTopic: state.quizState.autoPlayTopic || state.selectedTopic || '일반상식',
+            autoPlayDifficultyMode: state.quizState.autoPlayDifficultyMode || 'auto',
+            autoPlayQuestionDurationSec: Number(state.quizState.autoPlayQuestionDurationSec || 0),
+            autoPlayIntervalSec: Number(state.quizState.autoPlayIntervalSec || 8)
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          applyIncomingRoomData(data);
+        }
+      } catch (e) {}
+    }
+
+    // 관리자: 현재 진행 중인 문제 제한시간 실시간 연장 (+5초 / +10초) + 전체 공지 자동 전송
+    async function extendQuestionTime(extraSeconds) {
+      if (state.quizState.status !== 'question_active') return;
+      const addSec = Number(extraSeconds || 5);
+      if (addSec <= 0) return;
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode: ROOM_CODE,
+            action: 'EXTEND_TIME',
+            extraSeconds: addSec
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          applyIncomingRoomData(data);
+        }
+      } catch (e) {}
+    }
+
+    async function updateAutoPlaySetting(patch) {
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode: ROOM_CODE,
+            action: 'CONFIG_AUTO_PLAY',
+            ...patch
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          applyIncomingRoomData(data);
+        }
+      } catch (e) {}
+    }
+
+      // 사설(직접 입력) 주제를 수동 출제 및 자동 진행 주제로 즉시 적용하는 헬퍼
+    function applyCustomTopicInput(alsoSetAutoPlay = false) {
+      const input = document.getElementById('admin-custom-topic-input');
+      const val = (input ? input.value : state.customTopicInput).trim();
+      if (!val) {
+        showAdminToast('사설 주제를 입력해 주세요! (예: 리그오브레전드, K-POP, 삼국지)');
+        return;
+      }
+      state.customTopicInput = val;
+      state.selectedTopic = val;
+      if (alsoSetAutoPlay) {
+        updateAutoPlaySetting({ autoPlayTopic: val });
+        showAdminToast(`사설 주제 [${val}]가 수동 및 자동 진행 주제로 설정되었습니다!`);
+      } else {
+        showAdminToast(`사설 주제 [${val}]가 선택되었습니다!`);
+        render();
+      }
+    }
+
+    async function updateQuizStatePatch(patch) {
+      const nextState = {
+        ...state.quizState,
+        ...patch,
+        updatedAt: Date.now()
+      };
+      state.quizState = nextState;
+      render();
+      try {
+        const res = await fetch('/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode: ROOM_CODE,
+            quizState: nextState
+          })
+        });
+        if (res.ok) {
+          applyIncomingRoomData(await res.json());
+        }
+      } catch (e) {}
+    }
+
+    // 관리자: 뱅크에서 새 문제 즉시 뽑기
+    async function generateAiQuiz() {
+      if (state.isGeneratingAi) return;
+      state.isGeneratingAi = true;
+      render();
+      try {
+        const qInput = document.getElementById('admin-question-input');
+        const expInput = document.getElementById('admin-explanation-input');
+        const res = await fetch('/ai-quiz', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: state.selectedTopic,
+            difficulty: state.selectedDifficulty
+          })
+        });
+        const data = await res.json();
+        if (data && data.ok && data.quiz) {
+          state.draftQuestion = data.quiz.question;
+          state.draftAnswer = data.quiz.answer === 'X' ? 'X' : 'O';
+          state.draftExplanation = data.quiz.explanation || '';
+          state.quizState.topic = state.selectedTopic;
+          state.quizState.difficulty = state.selectedDifficulty;
+          state.lastAiDebug = data.debug || null;
+          if (typeof data.usedQuestionCount === 'number') state.usedQuestionCount = data.usedQuestionCount;
+          if (typeof data.bankCount === 'number') state.unusedBankCount = data.bankCount;
+          if (qInput) qInput.value = state.draftQuestion;
+          if (expInput) expInput.value = state.draftExplanation;
+          showAdminToast(`[${state.selectedTopic} · ${state.selectedDifficulty}] 새 문제를 준비했습니다!`);
+        }
+      } catch (e) {
+        showAdminToast('문제 불러오기 중 오류가 발생했습니다.');
+      } finally {
+        state.isGeneratingAi = false;
+        render();
+      }
+    }
+
+    // 관리자: 선택한 주제의 문제 뱅크 수동 미리 충전
+    async function refillBankManually() {
+      showAdminToast(`[${state.selectedTopic} · ${state.selectedDifficulty}] 문제를 AI로 뱅크에 충전 중입니다...`);
+      try {
+        const res = await fetch('/refill-bank', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: state.selectedTopic,
+            difficulty: state.selectedDifficulty
+          })
+        });
+        const data = await res.json();
+        if (data && data.ok) {
+          state.unusedBankCount = data.unusedBankCount || state.unusedBankCount;
+          showAdminToast(`충전 완료! 신규 ${data.addedCount || 0}문제가 미사용 뱅크에 추가되었습니다.`);
+          render();
+        } else {
+          showAdminToast('AI 충전 실패: API 키 상태를 확인해 주세요.');
+        }
+      } catch (e) {
+        showAdminToast('뱅크 충전 요청 중 오류가 발생했습니다.');
+      }
+    }
+
+    // 관리자: 수동 문제 출제 및 제한시간 시작
+    async function startQuestionTimer(seconds) {
+      getAudioCtx();
+      const qInput = document.getElementById('admin-question-input');
+      const expInput = document.getElementById('admin-explanation-input');
+      const qText = (qInput ? qInput.value : state.draftQuestion).trim();
+      const expText = (expInput ? expInput.value : state.draftExplanation).trim();
+
+      if (!qText) {
+        showAdminToast('출제할 문제를 먼저 입력하거나 뽑아주세요!');
+        return;
+      }
+
+      state.draftQuestion = qText;
+      state.draftExplanation = expText;
+
+      const sec = Number(seconds || state.customTimerSec || 10);
+      const now = Date.now() + state.serverOffsetMs;
+      const nextQId =
+        state.quizState.status === 'answer_revealed'
+          ? Number(state.quizState.questionId || 1) + 1
+          : Number(state.quizState.questionId || 1);
+
+      const resetParticipants = state.participants.map((p) => ({
+        ...p,
+        choice: null,
+        spectatorChoice: null,
+        questionId: nextQId,
+        updatedAt: now
+      }));
+
+      const nextQuizState = {
+        ...state.quizState,
+        status: 'question_active',
+        topic: state.selectedTopic || state.quizState.topic || '일반상식',
+        difficulty: state.selectedDifficulty || state.quizState.difficulty || '보통',
+        question: qText,
+        correctAnswer: state.draftAnswer === 'X' ? 'X' : 'O',
+        explanation: expText,
+        questionId: nextQId,
+        gameStarted: true,
+        winnerNickname: null,
+        allWrongRevived: false,
+        revealAt: now + sec * 1000,
+        countdownDuration: sec,
+        updatedAt: now
+      };
+
+      const res = await fetch('/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode: ROOM_CODE,
+          quizState: nextQuizState,
+          participants: resetParticipants
+        })
+      });
+      if (res.ok) {
+        applyIncomingRoomData(await res.json());
+      }
+    }
+
+    async function revealAnswerNow() {
+      const res = await fetch('/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode: ROOM_CODE,
+          action: 'REVEAL_NOW'
+        })
+      });
+      if (res.ok) {
+        applyIncomingRoomData(await res.json());
+      }
+    }
+
+    async function reviveAllForNextRound() {
+      const now = Date.now() + state.serverOffsetMs;
+      const nextRound = Number(state.quizState.roundNumber || 1) + 1;
+      const revived = state.participants.map((p) => ({
+        ...p,
+        isAlive: !p.spectatorOnly,
+        choice: null,
+        spectatorChoice: null,
+        eliminatedRound: null,
+        questionId: 1,
+        updatedAt: now
+      }));
+
+      const nextState = {
+        ...state.quizState,
+        status: 'waiting',
+        question: '',
+        explanation: '',
+        roundNumber: nextRound,
+        questionId: 1,
+        winnerNickname: null,
+        allWrongRevived: false,
+        revealAt: null,
+        countdownDuration: null,
+        nextAutoQuestionAt: null,
+        initialAliveCount: revived.length,
+        updatedAt: now
+      };
+
+      const res = await fetch('/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode: ROOM_CODE,
+          quizState: nextState,
+          participants: revived
+        })
+      });
+      if (res.ok) {
+        applyIncomingRoomData(await res.json());
+        showAdminToast(`전원 부활 완료! ${nextRound}라운드를 시작하세요.`);
+      }
+    }
+
+    async function resetEntireGame() {
+      const now = Date.now() + state.serverOffsetMs;
+      const resetUsers = state.participants.map((p) => ({
+        ...p,
+        isAlive: !p.spectatorOnly,
+        choice: null,
+        spectatorChoice: null,
+        eliminatedRound: null,
+        wins: 0,
+        forceWins: 0,
+        questionId: 1,
+        updatedAt: now
+      }));
+
+      const nextState = {
+        ...state.quizState,
+        status: 'waiting',
+        question: '',
+        explanation: '',
+        roundNumber: 1,
+        questionId: 1,
+        gameStarted: false,
+        winnerNickname: null,
+        finalChampionNickname: null,
+        allWrongRevived: false,
+        revealAt: null,
+        countdownDuration: null,
+        autoPlayEnabled: false,
+        autoPlayStopAfterCurrent: false,
+        nextAutoQuestionAt: null,
+        initialAliveCount: resetUsers.length,
+        updatedAt: now
+      };
+
+      const res = await fetch('/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode: ROOM_CODE,
+          action: 'RESET_ALL_WINS',
+          quizState: nextState,
+          participants: resetUsers
+        })
+      });
+      if (res.ok) {
+        applyIncomingRoomData(await res.json());
+        showAdminToast('게임과 모든 승수가 초기화되었습니다.');
+      }
+    }
+
+    // ============================================================================
+    // 메인 화면 렌더링 (포커스 보존 및 우승 축하 팝업 / 관전자 모드 / 참가자 관리 포함)
+    // ============================================================================
+    function render() {
+      const root = document.getElementById('app');
+      if (!root) return;
+
+      // 상단 고정 관리자 공지 바 표시 여부 업데이트
+      const stickyBar = document.getElementById('admin-sticky-bar');
+      const stickyStatus = document.getElementById('admin-sticky-status');
+      if (stickyBar) {
+        if (state.role === 'admin') {
+          stickyBar.classList.remove('hidden');
+          if (stickyStatus) {
+            const aliveCnt = state.participants.filter((p) => p.isAlive !== false).length;
+            stickyStatus.textContent = `${state.quizState.roundNumber || 1}R · ${state.quizState.questionId || 1}Q | 생존 ${aliveCnt}/${state.participants.length}명`;
+          }
+        } else {
+          stickyBar.classList.add('hidden');
+        }
+      }
+
+      // 현재 포커스된 입력창 상태 기억 (관리자 문제/해설 입력 중 리렌더링 시 복원)
+      const activeEl = document.activeElement;
+      const activeId = activeEl && activeEl.id ? activeEl.id : null;
+      const activeVal = activeEl && typeof activeEl.value === 'string' ? activeEl.value : null;
+      const selStart = activeEl && typeof activeEl.selectionStart === 'number' ? activeEl.selectionStart : null;
+      const selEnd = activeEl && typeof activeEl.selectionEnd === 'number' ? activeEl.selectionEnd : null;
+
+      const qs = state.quizState;
+      const aliveUsers = state.participants.filter((p) => p.isAlive !== false);
+      const deadUsers = state.participants.filter((p) => p.isAlive === false);
+      const offlineUsers = state.participants.filter((p) => getParticipantPresenceStatus(p).status === 'offline');
+
+      // 이번 문제 참여자 집계 (생존자 + 이번 문제에서 방금 탈락한 오답자/미선택자 100% 포함)
+      const currentElimTag = `${qs.roundNumber || 1}R-${qs.questionId || 1}Q`;
+      const roundParticipants = state.participants.filter(
+        (p) => p.isAlive !== false || p.eliminatedRound === currentElimTag
+      );
+      const oPickedUsers = roundParticipants.filter((p) => p.choice === 'O');
+      const xPickedUsers = roundParticipants.filter((p) => p.choice === 'X');
+      const unpickedUsers = roundParticipants.filter((p) => p.choice !== 'O' && p.choice !== 'X');
+
+      const me = state.participants.find((p) => p.id === state.myId);
+      const myEffectiveChoice = me ? (me.choice || me.spectatorChoice) : null;
+
+      // 공통 토스트 & 드럼롤 모달 & 결과 팝업
+      const userToastHtml = state.userToast
+        ? `<div class="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-indigo-600 text-white font-extrabold text-sm shadow-2xl border border-indigo-300">${escapeHtml(state.userToast)}</div>`
+        : '';
+
+      const questionSplashHtml = '';
+
+      const drumrollModalHtml = state.isDrumrolling
+        ? `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+            <div class="bg-slate-900 border-2 border-amber-400 rounded-3xl p-7 max-w-md w-full text-center space-y-5 shadow-2xl">
+              <div class="drumroll-shake inline-flex items-center justify-center gap-3 px-6 py-3 rounded-2xl bg-slate-950 border border-slate-800">
+                <span class="text-4xl font-black text-blue-400">O</span>
+                <span class="text-lg font-black text-slate-500">VS</span>
+                <span class="text-4xl font-black text-rose-400">X</span>
+              </div>
+              <div class="space-y-1">
+                <p class="text-xs font-extrabold text-amber-300 tracking-widest uppercase">DRUMROLL</p>
+                <h3 class="text-2xl sm:text-3xl font-black text-white">🥁 두구두구두구... 과연 정답은?!</h3>
+              </div>
+              <div class="w-full h-3 rounded-full bg-slate-800 overflow-hidden p-0.5">
+                <div class="h-full rounded-full bg-gradient-to-r from-amber-400 via-indigo-400 to-rose-400 drumroll-bar"></div>
+              </div>
+            </div>
+          </div>
+        `
+        : '';
+
+      // 정답 공개 팝업 (우승자 축하 탭 + O/X 선택자 명단 탭 지원)
+      const currentResultKey = `${qs.roundNumber}_${qs.questionId}_${qs.status}`;
+      const showResultPopup =
+        qs.status === 'answer_revealed' &&
+        !state.isDrumrolling &&
+        state.dismissedResultKey !== currentResultKey;
+
+      const hasWinnerInRound = Boolean(qs.finalChampionNickname || qs.winnerNickname);
+      const activePopupTab =
+        state.resultPopupTab === 'auto'
+          ? hasWinnerInRound
+            ? 'winner'
+            : 'list'
+          : state.resultPopupTab;
+
+      const leaderboardUsers = [...state.participants].sort(
+        (a, b) => Number(b.wins || 0) - Number(a.wins || 0)
+      );
+
+      let myResultBannerHtml = '';
+      if (state.role === 'user' && me) {
+        if (qs.allWrongRevived) {
+          myResultBannerHtml = `
+            <div class="mb-3 px-4 py-2.5 rounded-2xl bg-amber-400/20 border border-amber-300 text-amber-200 font-black text-sm">
+              ⚡ 전원 오답! 패자부활로 기존 생존자 전원이 생존을 유지합니다!
+            </div>
+          `;
+        } else if (me.eliminatedRound === currentElimTag || (me.isAlive !== false && me.choice)) {
+          const isCorrect = me.choice === qs.correctAnswer;
+          myResultBannerHtml = isCorrect
+            ? `<div class="mb-3 px-4 py-2.5 rounded-2xl bg-emerald-500/25 border border-emerald-400 text-emerald-200 font-black text-sm">🎉 정답! 생존했습니다 (내 선택: ${me.choice})</div>`
+            : `<div class="mb-3 px-4 py-2.5 rounded-2xl bg-rose-500/25 border border-rose-400 text-rose-200 font-black text-sm">💥 오답! 아쉽게 탈락했습니다 (내 선택: ${me.choice || '미선택'})</div>`;
+        } else if (me.isAlive === false && me.spectatorChoice) {
+          const specCorrect = me.spectatorChoice === qs.correctAnswer;
+          myResultBannerHtml = specCorrect
+            ? `<div class="mb-3 px-4 py-2 rounded-2xl bg-indigo-500/25 border border-indigo-400 text-indigo-200 font-bold text-xs">👀 관전 예측 성공! (${me.spectatorChoice} 선택)</div>`
+            : `<div class="mb-3 px-4 py-2 rounded-2xl bg-slate-800 border border-slate-700 text-slate-300 font-bold text-xs">👀 관전 예측 아쉬워요 (${me.spectatorChoice} 선택)</div>`;
+        }
+      } else if (qs.allWrongRevived) {
+        myResultBannerHtml = `
+          <div class="mb-3 px-4 py-2.5 rounded-2xl bg-amber-400/20 border border-amber-300 text-amber-200 font-black text-sm text-center">
+            ⚡ 전원 오답(생존자 0명)! 패자부활로 전원 생존이 유지됩니다!
+          </div>
+        `;
+      }
+
+      const resultPopupHtml = showResultPopup
+        ? `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
+            <div class="bg-slate-900 border-2 ${qs.finalChampionNickname ? 'border-amber-400' : 'border-slate-700'} rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+              ${
+                hasWinnerInRound && activePopupTab === 'winner'
+                  ? `
+                    <!-- 우승자/챔피언 전용 스페셜 축하 화면 -->
+                    <div class="p-6 sm:p-8 text-center space-y-4 bg-gradient-to-b from-amber-500/20 via-slate-900 to-slate-900 overflow-y-auto">
+                      <div class="trophy-bounce inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-amber-400/20 border-2 border-amber-400 text-5xl shadow-lg">
+                        ${qs.finalChampionNickname ? '👑' : '🥇'}
+                      </div>
+                      <div class="space-y-1">
+                        <span class="inline-block px-3.5 py-1 rounded-full bg-amber-400 text-slate-950 font-black text-xs">
+                          ${qs.finalChampionNickname ? `최종 챔피언 등극 (목표 ${qs.targetWins || 1}승 달성)` : `${qs.roundNumber || 1}라운드 최후의 1인 우승!`}
+                        </span>
+                        <h2 class="text-3xl sm:text-4xl font-black text-amber-300 pt-1">
+                          ${escapeHtml(qs.finalChampionNickname || qs.winnerNickname)} 님 축하합니다!
+                        </h2>
+                        <p class="text-xs sm:text-sm font-bold text-slate-300">
+                          마지막 문제 정답: <strong class="text-white">${qs.correctAnswer}</strong> · ${escapeHtml(qs.explanation || '')}
+                        </p>
+                      </div>
+
+                      <!-- 다승 순위 리더보드 -->
+                      <div class="bg-slate-950/90 border border-slate-800 rounded-2xl p-4 text-left space-y-2 max-w-md mx-auto">
+                        <div class="flex items-center justify-between text-xs font-black text-slate-400 pb-1 border-b border-slate-800">
+                          <span>🏆 현재 다승 순위표</span>
+                          <span>목표 ${qs.targetWins || 1}승</span>
+                        </div>
+                        <div class="space-y-1.5 max-h-40 overflow-y-auto">
+                          ${leaderboardUsers
+                            .slice(0, 8)
+                            .map(
+                              (u, idx) => `
+                                <div class="flex items-center justify-between px-3 py-1.5 rounded-xl ${idx === 0 ? 'bg-amber-400/15 border border-amber-400/40' : 'bg-slate-900'}">
+                                  <span class="font-bold text-xs sm:text-sm text-white">
+                                    ${idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.` } ${(window.ArcadeAuth && window.ArcadeAuth.formatStyledNameHtml) ? window.ArcadeAuth.formatStyledNameHtml(u.nickname, u.cosmetics) : escapeHtml(u.nickname)}
+                                  </span>
+                                  <span class="px-2.5 py-0.5 rounded-lg bg-amber-400 text-slate-950 font-black text-xs">${u.wins || 0}승</span>
+                                </div>
+                              `
+                            )
+                            .join('')}
+                        </div>
+                      </div>
+                    </div>
+                  `
+                  : `
+                    <!-- 일반 정답 결과 및 O/X 선택자 명단 화면 -->
+                    <div class="p-5 sm:p-6 text-center ${qs.correctAnswer === 'O' ? 'bg-blue-600' : 'bg-rose-600'} text-white">
+                      <span class="inline-block px-3 py-1 rounded-full bg-black/25 text-xs font-black mb-2">
+                        ${qs.roundNumber || 1}라운드 · ${qs.questionId || 1}번 문제 결과 (${escapeHtml(qs.topic || '일반상식')})
+                      </span>
+                      ${myResultBannerHtml}
+                      <div class="flex items-center justify-center gap-3 my-1">
+                        <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-white ${qs.correctAnswer === 'O' ? 'text-blue-600' : 'text-rose-600'} font-black text-5xl sm:text-6xl flex items-center justify-center shadow-xl">
+                          ${qs.correctAnswer}
+                        </div>
+                      </div>
+                      <p class="text-sm sm:text-base font-bold text-white/95 mt-2">${escapeHtml(qs.question)}</p>
+                      ${
+                        qs.explanation
+                          ? `<div class="mt-3 p-3 rounded-2xl bg-black/25 text-xs sm:text-sm font-bold text-amber-200 text-left">💡 해설: ${escapeHtml(qs.explanation)}</div>`
+                          : ''
+                      }
+                      ${
+                        qs.nextAutoQuestionAt
+                          ? `<div id="user-auto-next-popup-badge" class="mt-3 inline-block px-4 py-1.5 rounded-full bg-indigo-950/90 border border-indigo-300 text-indigo-200 font-black text-xs sm:text-sm animate-pulse">⏳ ${state.autoNextRemainingSec !== null ? state.autoNextRemainingSec : 8}초 후 다음 문제가 시작됩니다</div>`
+                          : ''
+                      }
+                    </div>
+
+                    <div class="p-4 sm:p-5 space-y-3 overflow-y-auto bg-slate-950 flex-1">
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <!-- O 선택 명단 -->
+                        <div class="p-3.5 rounded-2xl border-2 ${qs.correctAnswer === 'O' ? 'border-emerald-500/70 bg-emerald-950/20' : 'border-rose-500/50 bg-rose-950/15'}">
+                          <div class="flex items-center justify-between mb-2">
+                            <span class="font-black text-sm text-blue-400">O 선택 (${oPickedUsers.length}명)</span>
+                            <span class="px-2 py-0.5 rounded-lg text-[11px] font-black ${qs.correctAnswer === 'O' ? 'bg-emerald-500 text-slate-950' : 'bg-rose-500 text-white'}">
+                              ${qs.correctAnswer === 'O' ? '⭕ 정답 · 생존' : '❌ 오답 · 탈락'}
+                            </span>
+                          </div>
+                          <div class="flex flex-wrap gap-1.5">
+                            ${
+                              oPickedUsers.length > 0
+                                ? oPickedUsers
+                                    .map(
+                                      (u) =>
+                                        `<span class="px-2.5 py-1 rounded-xl text-xs font-bold ${qs.correctAnswer === 'O' ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 line-through border border-rose-500/30'}">${escapeHtml(u.nickname)}</span>`
+                                    )
+                                    .join('')
+                                : '<span class="text-xs text-slate-500">선택한 인원 없음</span>'
+                            }
+                          </div>
+                        </div>
+
+                        <!-- X 선택 명단 -->
+                        <div class="p-3.5 rounded-2xl border-2 ${qs.correctAnswer === 'X' ? 'border-emerald-500/70 bg-emerald-950/20' : 'border-rose-500/50 bg-rose-950/15'}">
+                          <div class="flex items-center justify-between mb-2">
+                            <span class="font-black text-sm text-rose-400">X 선택 (${xPickedUsers.length}명)</span>
+                            <span class="px-2 py-0.5 rounded-lg text-[11px] font-black ${qs.correctAnswer === 'X' ? 'bg-emerald-500 text-slate-950' : 'bg-rose-500 text-white'}">
+                              ${qs.correctAnswer === 'X' ? '⭕ 정답 · 생존' : '❌ 오답 · 탈락'}
+                            </span>
+                          </div>
+                          <div class="flex flex-wrap gap-1.5">
+                            ${
+                              xPickedUsers.length > 0
+                                ? xPickedUsers
+                                    .map(
+                                      (u) =>
+                                        `<span class="px-2.5 py-1 rounded-xl text-xs font-bold ${qs.correctAnswer === 'X' ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 line-through border border-rose-500/30'}">${escapeHtml(u.nickname)}</span>`
+                                    )
+                                    .join('')
+                                : '<span class="text-xs text-slate-500">선택한 인원 없음</span>'
+                            }
+                          </div>
+                        </div>
+                      </div>
+
+                      ${
+                        unpickedUsers.length > 0
+                          ? `
+                            <div class="p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                              <span class="block text-xs font-bold text-slate-400 mb-1.5">⏰ 시간 초과 미선택 (${unpickedUsers.length}명)</span>
+                              <div class="flex flex-wrap gap-1.5">
+                                ${unpickedUsers
+                                  .map(
+                                    (u) =>
+                                      `<span class="px-2.5 py-1 rounded-xl bg-slate-800 text-slate-400 text-xs font-bold line-through">${escapeHtml(u.nickname)}</span>`
+                                  )
+                                  .join('')}
+                              </div>
+                            </div>
+                          `
+                          : ''
+                      }
+                    </div>
+                  `
+              }
+
+              <!-- 팝업 하단 버튼 바 -->
+              <div class="p-4 bg-slate-900 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  ${
+                    hasWinnerInRound
+                      ? `
+                        <button
+                          type="button"
+                          onclick="state.resultPopupTab = (state.resultPopupTab === 'list' ? 'winner' : 'list'); render();"
+                          class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-black text-xs cursor-pointer"
+                        >
+                          ${activePopupTab === 'winner' ? '📊 O/X 선택 명단 보기' : '🏆 우승자 축하 화면 보기'}
+                        </button>
+                      `
+                      : ''
+                  }
+                  ${
+                    state.role === 'admin' && qs.winnerNickname && !qs.finalChampionNickname
+                      ? `
+                        <button
+                          type="button"
+                          onclick="reviveAllForNextRound()"
+                          class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs cursor-pointer"
+                        >
+                          전원 부활 · ${(qs.roundNumber || 1) + 1}라운드 시작
+                        </button>
+                      `
+                      : ''
+                  }
+                </div>
+                <button
+                  type="button"
+                  onclick="state.dismissedResultKey = '${currentResultKey}'; render();"
+                  class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs sm:text-sm cursor-pointer ml-auto"
+                >
+                  확인 (닫기)
+                </button>
+              </div>
+            </div>
+          </div>
+        `
+        : '';
+
+      // =========================================================================
+      // 1) 첫 화면 (OX 서바이벌 방 만들기 & 방 입장 로비 - 닉네임 재입력 없이 즉시 입장!)
+      // =========================================================================
+      if (state.role === 'home') {
+        root.innerHTML = `
+          ${userToastHtml}
+          <div class="min-h-screen flex flex-col items-center justify-center p-4 bg-[#060913]">
+            <div class="bg-[#111625] border border-[#1e263d] rounded-[26px] p-6 sm:p-8 max-w-[500px] w-full shadow-2xl space-y-5">
+              <!-- 상단 포털 복귀 & 내 닉네임 표시 -->
+              <div class="flex items-center justify-between">
+                <a
+                  href="/"
+                  class="text-xs font-bold text-slate-400 hover:text-white flex items-center gap-1 transition"
+                >
+                  ← 게임 선택으로
+                </a>
+                <span class="px-2.5 py-1 rounded-full bg-[#171e36] border border-[#2a3663] text-[#7c93ff] text-[11px] font-extrabold">
+                  👤 내 닉네임: <strong class="text-white">${escapeHtml(state.nickname || '자동 연동 중')}</strong>
+                </span>
+              </div>
+
+              <div class="text-center">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[11px] font-extrabold mb-1.5">
+                  OX SURVIVAL
+                </div>
+                <h1 class="text-2xl font-black tracking-tight text-white">방 선택</h1>
+              </div>
+
+              <!-- 새 방 만들기 (방 만든 뒤 방 안에서 모드 및 세부 설정) -->
+              <div class="p-3.5 sm:p-4 rounded-2xl bg-[#080c17] border border-[#232f52] space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-extrabold text-[#7c93ff]">👑 방 만들기</span>
+                </div>
+                <form onsubmit="createOxRoom(event)" class="space-y-2">
+                  <div class="flex flex-col sm:flex-row gap-2">
+                    <input
+                      id="ox-new-room-title"
+                      type="text"
+                      maxlength="24"
+                      placeholder="방 제목 입력"
+                      class="w-full sm:flex-1 min-w-0 px-3.5 py-2.5 rounded-xl bg-[#111625] border border-[#1f2942] text-white font-bold text-xs sm:text-sm focus:outline-none focus:border-[#5851f6]"
+                    />
+                    <button
+                      type="submit"
+                      class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#5851f6] hover:bg-[#4b44e6] text-white font-black text-xs sm:text-sm shadow-lg cursor-pointer shrink-0 transition"
+                    >
+                      + 방 만들기
+                    </button>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="flex items-center gap-1.5 bg-[#111625] border border-[#1f2942] rounded-xl px-3 py-1.5">
+                      <span class="text-[11px] font-bold text-slate-400 shrink-0">👥 최대인원</span>
+                      <input id="ox-new-room-max" type="number" min="0" max="100" value="0" placeholder="0=무제한" class="w-full bg-transparent text-xs font-bold text-white outline-none text-right" />
+                    </div>
+                    <div class="flex items-center gap-1.5 bg-[#111625] border border-[#1f2942] rounded-xl px-3 py-1.5">
+                      <span class="text-[11px] font-bold text-slate-400 shrink-0">🔒 비번</span>
+                      <input id="ox-new-room-pw" type="password" inputmode="numeric" maxlength="4" placeholder="4자리(선택)" class="w-full bg-transparent text-xs font-bold text-white placeholder-slate-500 outline-none text-right" />
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-3 gap-2">
+                    <div class="flex items-center gap-1 bg-[#111625] border border-[#1f2942] rounded-xl px-2.5 py-1.5">
+                      <span class="text-[11px] font-bold text-pink-300 shrink-0">방 방식</span>
+                      <select id="ox-new-room-funding-mode" onchange="const lbl=document.getElementById('ox-new-room-fee-label'); if(lbl) lbl.textContent = this.value === 'HOST_EVENT' ? '🎁 상금' : '⭐ 참가비'; const hint=document.getElementById('ox-new-room-event-hint'); if(hint) hint.classList.toggle('hidden', this.value !== 'HOST_EVENT');" class="w-full bg-[#111625] text-xs font-black text-pink-300 outline-none text-right">
+                        <option value="ENTRY_FEE">⭐ 일반 참가비방</option>
+                        <option value="HOST_EVENT">🎁 방장 이벤트방</option>
+                      </select>
+                    </div>
+                    <div class="flex items-center gap-1 bg-[#111625] border border-[#1f2942] rounded-xl px-2.5 py-1.5">
+                      <span id="ox-new-room-fee-label" class="text-[11px] font-bold text-amber-300 shrink-0">⭐ 참가비</span>
+                      <select id="ox-new-room-fee" onchange="const w=document.getElementById('ox-new-room-custom-fee-wrap'); if(w) w.classList.toggle('hidden', this.value !== 'CUSTOM');" class="w-full bg-[#111625] text-xs font-black text-amber-300 outline-none text-right">
+                        <option value="0">무료 (0 스타)</option>
+                        <option value="100">100 스타</option>
+                        <option value="500">500 스타</option>
+                        <option value="1000">1,000 스타</option>
+                        <option value="3000">3,000 스타</option>
+                        <option value="10000">10,000 스타</option>
+                        <option value="CUSTOM">✏️ 직접 입력...</option>
+                      </select>
+                    </div>
+                    <div class="flex items-center gap-1 bg-[#111625] border border-[#1f2942] rounded-xl px-2.5 py-1.5">
+                      <span class="text-[11px] font-bold text-cyan-300 shrink-0">🏅 배분</span>
+                      <select id="ox-new-room-payout" class="w-full bg-[#111625] text-xs font-black text-cyan-300 outline-none text-right">
+                        <option value="WINNER_TAKES_ALL">👑 1등 독식 (100%)</option>
+                        <option value="TOP3_SPLIT">🏅 1~3등 (60/25/15%)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div id="ox-new-room-custom-fee-wrap" class="hidden flex items-center gap-2 bg-[#111625] border border-amber-500/40 rounded-xl px-3 py-1.5">
+                    <span class="text-[11px] font-bold text-amber-300 shrink-0">✏️ 금액 직접 입력</span>
+                    <input id="ox-new-room-custom-fee" type="number" min="0" step="100" placeholder="스타 숫자 입력 (예: 5000)" class="w-full bg-transparent text-xs font-black text-white outline-none text-right" />
+                    <span class="text-xs font-black text-amber-400">스타</span>
+                  </div>
+                  <p id="ox-new-room-event-hint" class="hidden text-[11px] text-pink-300 font-bold px-1">🎁 이벤트방: 일반 유저는 참가비 0스타로 입장하며, 방장이 설정한 총상금이 우승자에게 배분됩니다.</p>
+                </form>
+              </div>
+
+              <!-- 현재 열려 있는 방 목록 -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="font-extrabold text-slate-300">🚪 열린 방 목록</span>
+                  <span class="font-bold text-cyan-400">${state.roomsList.length}개</span>
+                </div>
+                <div class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  ${state.roomsList.length === 0
+                    ? '<div class="p-6 rounded-2xl bg-[#090d18] border border-[#1f2942] text-center text-xs text-slate-500">생성된 방이 없습니다. 새 방을 만들어보세요!</div>'
+                    : state.roomsList
+                    .map((rm) => {
+                      const stLabel =
+                        rm.status === 'question_active'
+                          ? '🔥 문제 진행 중'
+                          : rm.status === 'answer_revealed'
+                          ? '📊 정답 공개 중'
+                          : '⏳ 대기 중';
+                      return `
+                        <div
+                          onclick="joinOxRoomAsUser('${escapeHtml(rm.roomCode)}', '${escapeHtml(rm.title)}')"
+                          class="p-3.5 rounded-2xl bg-[#090d18] hover:bg-[#151c33] border border-[#1f2942] hover:border-[#5851f6] transition flex items-center justify-between gap-2 cursor-pointer group"
+                        >
+                          <div>
+                            <div class="flex items-center gap-2 mb-0.5">
+                              <span class="text-sm font-black text-white group-hover:text-cyan-300 transition">${rm.hasPassword ? '🔒 ' : ''}${escapeHtml(rm.title)}</span>
+                              <span class="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold">${stLabel}</span>
+                            </div>
+                            <div class="text-[11px] text-slate-400">
+                              👑 ${escapeHtml(rm.hostNickname || '방장')} · 인원 <strong class="text-white">${rm.count || 0}${rm.maxPlayers > 0 ? '/' + rm.maxPlayers : ''}명</strong> · <span class="font-extrabold ${(rm.entryFee || 0) > 0 ? (rm.roomFundingMode === 'HOST_EVENT' ? 'text-pink-300' : 'text-amber-300') : 'text-emerald-300'}">${(rm.entryFee || 0) > 0 ? (rm.roomFundingMode === 'HOST_EVENT' ? ('🎁 이벤트상금 ' + Number(rm.entryFee).toLocaleString() + ' 스타·참가무료 (' + (rm.payoutMode === 'TOP3_SPLIT' ? '1~3등 배분' : '1등 독식') + ')') : ('⭐ ' + Number(rm.entryFee).toLocaleString() + ' 스타 (' + (rm.payoutMode === 'TOP3_SPLIT' ? '1~3등 배분' : '1등 독식') + ')')) : '🆓 무료'}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            class="px-3.5 py-2 rounded-xl bg-[#5851f6] group-hover:bg-[#4b44e6] text-white font-extrabold text-xs shrink-0 shadow"
+                          >
+                            방 입장 →
+                          </button>
+                        </div>
+                      `;
+                    })
+                    .join('')}
+                </div>
+              </div>
+
+              <div class="pt-4 border-t border-[#1d2438] flex items-center justify-between text-xs text-slate-400">
+                <span>현재 방 참가자 <strong class="text-white">${state.participants.length}명</strong></span>
+                <button
+                  type="button"
+                  onclick="openAdminModal()"
+                  class="text-slate-400 hover:text-white font-bold underline cursor-pointer"
+                >
+                  관리자(MC) 모드
+                </button>
+              </div>
+            </div>
+          </div>
+
+          ${
+            state.showAdminPwModal
+              ? `
+                <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+                  <form onsubmit="submitAdminPw(event)" class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-xs w-full space-y-4">
+                    <h3 class="text-lg font-black text-white">관리자 비밀번호 입력</h3>
+                    <input
+                      id="admin-pw-input"
+                      type="password"
+                      placeholder="비밀번호"
+                      class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-white font-bold text-center text-lg focus:outline-none focus:border-indigo-500"
+                    />
+                    <div class="flex gap-2">
+                      <button
+                        type="button"
+                        onclick="state.showAdminPwModal = false; render();"
+                        class="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-sm cursor-pointer"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="submit"
+                        class="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-black text-sm cursor-pointer"
+                      >
+                        확인
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              `
+              : ''
+          }
+        `;
+        return;
+      }
+
+      // =========================================================================
+      // 2) 참가자(유저) 화면 (타이머 게이지 바 + 관전자 모의 투표 + 생존자 현황판 + 닉네임 변경)
+      // =========================================================================
+      if (state.role === 'user') {
+        const isAlive = me ? me.isAlive !== false : true;
+        const myWins = me ? Number(me.wins || 0) : 0;
+        const serverNowForBar = Date.now() + state.serverOffsetMs;
+        const remainMsForBar =
+          qs.status === 'question_active' && qs.revealAt
+            ? Math.max(0, Number(qs.revealAt) - serverNowForBar)
+            : 0;
+        const totalSecForBar = Math.max(1, Number(qs.countdownDuration || 10));
+        const initPctForBar = Math.max(0, Math.min(100, (remainMsForBar / (totalSecForBar * 1000)) * 100));
+        const initSecForBar = Math.ceil(remainMsForBar / 1000);
+        const initBarColor =
+          initSecForBar <= 3
+            ? 'bg-rose-500'
+            : initSecForBar <= 6
+            ? 'bg-amber-400'
+            : 'bg-emerald-400';
+
+        root.innerHTML = `
+          ${userToastHtml}
+          ${questionSplashHtml}
+          ${drumrollModalHtml}
+          ${resultPopupHtml}
+
+          <div class="max-w-lg mx-auto min-h-screen flex flex-col justify-between p-4 pb-8 space-y-4">
+            ${(() => {
+              const roomMeta = state.roomsList.find((r) => String(r.roomCode) === String(ROOM_CODE));
+              const isAutoHost =
+                qs.roomMode !== 'MANUAL' &&
+                (state.currentRoomHostClientId === state.myId || (roomMeta && roomMeta.hostClientId === state.myId));
+              if (!isAutoHost) return '';
+              const isRoundFinished = Boolean(qs.winnerNickname || qs.finalChampionNickname);
+              const isRoundLocked = Boolean(qs.gameStarted && !isRoundFinished);
+              return `
+                <div class="bg-gradient-to-r from-indigo-950/90 via-slate-900 to-indigo-950/90 border border-indigo-500/40 rounded-2xl p-3.5 space-y-2.5 shadow-xl">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-1.5 min-w-0">
+                      <span class="px-2 py-0.5 rounded-md bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[10px] font-black shrink-0">👑 방장</span>
+                      <span class="text-xs font-black text-white truncate">${escapeHtml(state.currentRoomTitle || '자동 출제 방')}</span>
+                      ${state.currentRoomHostNickname ? `<span class="text-[10px] font-bold text-amber-300 shrink-0">(${escapeHtml(state.currentRoomHostNickname)})</span>` : ''}
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <button type="button" ${isRoundLocked ? 'disabled' : ''} onclick="hostUpdateAutoSetting({ roomMode: 'MANUAL' })" class="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/35 border border-indigo-400/40 text-indigo-200 text-[11px] font-extrabold disabled:opacity-40 cursor-pointer">
+                        🎤 직접 출제 창
+                      </button>
+                      <button type="button" onclick="deleteOxRoom()" class="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-500/40 text-rose-300 text-[11px] font-extrabold cursor-pointer">
+                        🗑️ 방 삭제
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center justify-between gap-2 bg-[#080c17] border border-slate-700/80 rounded-xl px-2.5 py-1.5">
+                    <span class="text-[11px] font-bold text-slate-300">👥 최대 인원 (0=무제한)</span>
+                    <input type="number" min="0" max="100" value="${Number(state.currentRoomMaxPlayers || 0)}" ${isRoundLocked ? 'disabled' : ''} onchange="hostUpdateAutoSetting({ maxPlayers: Math.max(0, Math.min(100, Number(this.value) || 0)) })" class="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] font-black text-white text-right disabled:opacity-50 outline-none" />
+                  </div>
+                  <div class="grid grid-cols-4 gap-1.5">
+                    <select ${isRoundLocked ? 'disabled' : ''} onchange="hostUpdateAutoSetting({ autoPlayTopic: this.value })" class="px-2 py-1.5 rounded-lg bg-[#080c17] border border-slate-700 text-[11px] font-bold text-white disabled:opacity-50 outline-none">
+                      ${['일반상식', '과학/IT', '역사/문화', '넌센스/재미', '전체 랜덤'].map(t => `<option value="${t}" ${(qs.autoPlayTopic || '일반상식') === t ? 'selected' : ''}>${t}</option>`).join('')}
+                    </select>
+                    <select ${isRoundLocked ? 'disabled' : ''} onchange="hostUpdateAutoSetting({ autoPlayDifficultyMode: this.value })" class="px-2 py-1.5 rounded-lg bg-[#080c17] border border-slate-700 text-[11px] font-bold text-white disabled:opacity-50 outline-none">
+                      <option value="auto" ${(qs.autoPlayDifficultyMode || 'auto') === 'auto' ? 'selected' : ''}>난이도:자동</option>
+                      <option value="쉬움" ${qs.autoPlayDifficultyMode === '쉬움' ? 'selected' : ''}>쉬움</option>
+                      <option value="보통" ${qs.autoPlayDifficultyMode === '보통' ? 'selected' : ''}>보통</option>
+                      <option value="어려움" ${qs.autoPlayDifficultyMode === '어려움' ? 'selected' : ''}>어려움</option>
+                    </select>
+                    <select ${isRoundLocked ? 'disabled' : ''} onchange="hostUpdateAutoSetting({ autoPlayQuestionDurationSec: Number(this.value) })" class="px-2 py-1.5 rounded-lg bg-[#080c17] border border-slate-700 text-[11px] font-bold text-white disabled:opacity-50 outline-none">
+                      <option value="0" ${Number(qs.autoPlayQuestionDurationSec || 0) === 0 ? 'selected' : ''}>시간:자동</option>
+                      <option value="10" ${Number(qs.autoPlayQuestionDurationSec) === 10 ? 'selected' : ''}>10초</option>
+                      <option value="15" ${Number(qs.autoPlayQuestionDurationSec) === 15 ? 'selected' : ''}>15초</option>
+                      <option value="20" ${Number(qs.autoPlayQuestionDurationSec) === 20 ? 'selected' : ''}>20초</option>
+                      <option value="30" ${Number(qs.autoPlayQuestionDurationSec) === 30 ? 'selected' : ''}>30초</option>
+                    </select>
+                    <select ${isRoundLocked ? 'disabled' : ''} onchange="hostUpdateAutoSetting({ targetWins: Number(this.value) })" class="px-2 py-1.5 rounded-lg bg-[#080c17] border border-slate-700 text-[11px] font-bold text-white disabled:opacity-50 outline-none">
+                      <option value="0" ${Number(qs.targetWins) === 0 ? 'selected' : ''}>무제한</option>${[1, 2, 3, 5].map(w => `<option value="${w}" ${Number(qs.targetWins) === w ? 'selected' : ''}>${w}승</option>`).join('')}
+                    </select>
+                  </div>
+
+                  <div class="flex items-center justify-between gap-2">
+                    ${
+                      !qs.gameStarted
+                        ? `<button type="button" onclick="hostStartAutoGame()" class="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs cursor-pointer shadow">🚀 게임 시작</button>`
+                        : isRoundFinished
+                        ? `<button type="button" onclick="hostPrepareNextRound()" class="flex-1 py-2 rounded-xl bg-[#5851f6] hover:bg-[#4b44e6] text-white font-black text-xs cursor-pointer shadow">🔄 다음 라운드 준비 (설정 수정 가능)</button>`
+                        : `<div class="flex-1 py-1.5 px-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-[11px] font-bold text-amber-300 text-center">🔒 라운드 진행 중 (설정 변경 잠금)</div>`
+                    }
+                  </div>
+                </div>
+              `;
+            })()}
+            <!-- 상단 유저 상태 헤더 -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="px-2.5 py-1 rounded-lg text-xs font-black shrink-0 ${isAlive ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-slate-300'}">
+                    ${isAlive ? '🟢 생존 중' : '👀 관전 모드'}
+                  </span>
+                  <span class="font-black text-sm sm:text-base text-white truncate">${escapeHtml(state.nickname)}</span>
+                  <span class="px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 font-black text-xs shrink-0">${myWins}승</span>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  ${
+                    !qs.gameStarted
+                      ? `
+                        ${isAlive && state.currentRoomHostClientId !== state.myId ? `
+                          ${me && me.ready ? `<span class="text-[11px] font-black text-emerald-300">✅ 다시하기를 선택하셨습니다!</span>` : ''}
+                          <button
+                            type="button"
+                            onclick="toggleMyReadyState()"
+                            class="px-3 py-1 rounded-lg text-xs font-black cursor-pointer shadow ${
+                              me && me.ready
+                                ? 'bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-500/40'
+                                : 'bg-amber-400 hover:bg-amber-300 text-slate-950 animate-pulse'
+                            }"
+                          >
+                            ${me && me.ready ? '취소하기' : `다시하기 (참가비 ${(state.roomFundingMode === 'HOST_EVENT' ? 0 : (Number(state.entryFee) || 0)).toLocaleString()}스타)`}
+                          </button>
+                        ` : ''}
+                        <button
+                          type="button"
+                          onclick="toggleMySpectatorMode(${isAlive ? 'true' : 'false'})"
+                          class="px-2.5 py-1 rounded-lg text-xs font-extrabold cursor-pointer border ${
+                            isAlive
+                              ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-amber-300'
+                              : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/50 text-emerald-300'
+                          }"
+                        >
+                          ${isAlive ? '👀 관전하기' : '🟢 참여하기'}
+                        </button>
+                      `
+                      : ''
+                  }
+                  <button
+                    type="button"
+                    onclick="state.showNicknameModal = true; render();"
+                    class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
+                  >
+                    닉네임 변경
+                  </button>
+                  <button
+                    type="button"
+                    onclick="leaveGameAsUser()"
+                    class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-200 text-xs font-bold cursor-pointer"
+                  >
+                    나가기
+                  </button>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/80">
+                <span>${qs.roundNumber || 1}라운드 · ${qs.questionId || 1}번 문제 (${Number(qs.targetWins) === 0 ? '승수 무제한' : `목표 ${qs.targetWins || 1}승`})</span>
+                <span>생존 <strong class="text-emerald-400">${aliveUsers.length}</strong> / ${state.participants.length}명</span>
+              </div>
+            </div>
+
+            <!-- 중앙 문제 & 타이머 & O/X 선택 영역 -->
+            <div class="flex-1 flex flex-col justify-center space-y-4">
+              ${
+                qs.status === 'question_active'
+                  ? `
+                    <div class="bg-slate-900 border-2 border-indigo-500/60 rounded-3xl p-5 sm:p-6 space-y-4 shadow-2xl">
+                      <!-- 상단 주제 배지 & 실시간 남은 시간 숫자 -->
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 font-extrabold text-xs">
+                          주제: ${escapeHtml(qs.topic || '일반상식')} · ${escapeHtml(qs.difficulty || '보통')}
+                        </span>
+                        <span id="user-live-timer" class="text-2xl sm:text-3xl font-black ${initSecForBar <= 3 ? 'text-rose-400 animate-pulse' : 'text-amber-300'} tabular-nums">
+                          ${initSecForBar > 0 ? initSecForBar + '초' : '판정 중...'}
+                        </span>
+                      </div>
+
+                      <!-- 실시간 컬러 타이머 게이지 바 (클릭 리렌더링 시에도 현재 퍼센트 유지!) -->
+                      <div class="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div id="user-timer-progress-bar" class="h-full ${initBarColor} transition-all duration-150" style="width: ${initPctForBar.toFixed(1)}%"></div>
+                      </div>
+
+                      <!-- 문제 본문 -->
+                      <p class="text-lg sm:text-2xl font-black text-white leading-snug text-center py-2">
+                        ${escapeHtml(qs.question)}
+                      </p>
+
+                      ${
+                        !isAlive
+                          ? `
+                            <div class="px-3.5 py-2 rounded-xl bg-slate-800/90 border border-slate-700 text-center text-xs font-bold text-slate-300">
+                              👀 현재 관전 모드입니다. 아래 O/X를 눌러 모의 예측 투표에 참여해 보세요! (생존 결과에는 영향 없음)
+                            </div>
+                          `
+                          : ''
+                      }
+
+                      <!-- 대형 O / X 선택 버튼 -->
+                      <div class="grid grid-cols-2 gap-3.5 pt-1">
+                        <button
+                          type="button"
+                          onclick="selectOX('O')"
+                          class="py-7 sm:py-9 rounded-3xl font-black text-5xl sm:text-6xl transition transform active:scale-95 cursor-pointer border-4 ${
+                            myEffectiveChoice === 'O'
+                              ? 'bg-blue-600 border-white text-white shadow-xl scale-[1.02]'
+                              : 'bg-slate-950 hover:bg-blue-950/60 border-blue-500/50 text-blue-400'
+                          }"
+                        >
+                          O
+                          <span class="block text-xs font-extrabold mt-1.5 ${myEffectiveChoice === 'O' ? 'text-blue-100' : 'text-slate-400'}">
+                            ${myEffectiveChoice === 'O' ? '✓ 선택 완료' : '맞다 (TRUE)'}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onclick="selectOX('X')"
+                          class="py-7 sm:py-9 rounded-3xl font-black text-5xl sm:text-6xl transition transform active:scale-95 cursor-pointer border-4 ${
+                            myEffectiveChoice === 'X'
+                              ? 'bg-rose-600 border-white text-white shadow-xl scale-[1.02]'
+                              : 'bg-slate-950 hover:bg-rose-950/60 border-rose-500/50 text-rose-400'
+                          }"
+                        >
+                          X
+                          <span class="block text-xs font-extrabold mt-1.5 ${myEffectiveChoice === 'X' ? 'text-rose-100' : 'text-slate-400'}">
+                            ${myEffectiveChoice === 'X' ? '✓ 선택 완료' : '아니다 (FALSE)'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  `
+                  : `
+                    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 text-center space-y-4">
+                      <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-slate-800 text-2xl">
+                        ${qs.status === 'answer_revealed' ? '📊' : '⏳'}
+                      </div>
+                      <h2 class="text-xl sm:text-2xl font-black text-white">
+                        ${
+                          qs.finalChampionNickname
+                            ? `👑 최종 우승: ${escapeHtml(qs.finalChampionNickname)} 님!`
+                            : qs.winnerNickname
+                            ? `🏆 ${qs.roundNumber || 1}라운드 우승: ${escapeHtml(qs.winnerNickname)} 님!`
+                            : qs.status === 'answer_revealed'
+                            ? `정답은 [${qs.correctAnswer}] 입니다!`
+                            : '다음 문제를 준비하고 있습니다'
+                        }
+                      </h2>
+                      ${
+                        qs.status === 'answer_revealed' && qs.explanation
+                          ? `<p class="text-xs sm:text-sm font-bold text-slate-300 bg-slate-950 p-3.5 rounded-2xl border border-slate-800">💡 ${escapeHtml(qs.explanation)}</p>`
+                          : '<p class="text-xs sm:text-sm text-slate-400">잠시만 기다려 주세요. 곧 문제가 출제됩니다.</p>'
+                      }
+                      ${
+                        qs.status === 'answer_revealed' && qs.nextAutoQuestionAt
+                          ? `
+                            <div class="pt-1">
+                              <span id="user-auto-next-main-badge" class="inline-block px-4 py-2 rounded-full bg-indigo-600/30 border border-indigo-400 text-indigo-200 font-black text-xs sm:text-sm animate-pulse">
+                                ⏳ ${state.autoNextRemainingSec !== null ? state.autoNextRemainingSec : 8}초 후 다음 문제가 시작됩니다
+                              </span>
+                            </div>
+                          `
+                          : ''
+                      }
+                      ${
+                        qs.status === 'answer_revealed'
+                          ? `
+                            <div class="pt-2">
+                              <button
+                                type="button"
+                                onclick="state.dismissedResultKey = null; render();"
+                                class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 font-black text-xs cursor-pointer"
+                              >
+                                📊 방금 문제 결과 팝업 다시 보기
+                              </button>
+                            </div>
+                          `
+                          : ''
+                      }
+                    </div>
+                  `
+              }
+
+              <!-- 현재 생존자 & 다승 순위 미니 현황판 -->
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2">
+                <div class="flex items-center justify-between text-xs font-extrabold text-slate-400">
+                  <span>🟢 현재 생존자 (${aliveUsers.length}명)</span>
+                  <span>목표 ${qs.targetWins || 1}승</span>
+                </div>
+                <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                  ${
+                    state.participants.length > 0
+                      ? state.participants
+                          .map(
+                            (u) => {
+                              const isHostUser = state.currentRoomHostClientId && u.id === state.currentRoomHostClientId;
+                              const amIHost = state.currentRoomHostClientId && state.myId === state.currentRoomHostClientId;
+                              const uAlive = u.isAlive !== false;
+                              return `
+                              <span class="px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 ${
+                                u.id === state.myId
+                                  ? 'bg-indigo-600 text-white'
+                                  : uAlive
+                                  ? 'bg-slate-950 border border-slate-800 text-slate-200'
+                                  : 'bg-slate-950/50 border border-slate-800/60 text-slate-500'
+                              }">
+                                ${isHostUser ? '<span class="text-amber-300 font-black">👑방장</span>' : ''}
+                                ${!uAlive ? '<span class="text-[10px]">👀</span>' : ''}
+                                ${escapeHtml(u.nickname)}
+                                ${Number(u.wins || 0) > 0 ? `<strong class="text-amber-300">${u.wins}승</strong>` : ''}
+                                ${amIHost && u.id !== state.myId ? `<button type="button" onclick="adminControlParticipant('${u.id}', 'KICK')" class="ml-1 text-rose-400 hover:text-rose-200 font-black cursor-pointer" title="강퇴">×</button>` : ''}
+                              </span>
+                            `;
+                            }
+                          )
+                          .join('')
+                      : '<span class="text-xs text-slate-500">생존자가 없습니다.</span>'
+                  }
+                </div>
+              </div>
+            </div>
+
+            <!-- 하단 실시간 이모지 리액션 바 -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 flex items-center justify-around">
+              ${['👍', '😂', '😱', '🔥', '👏', '😭']
+                .map(
+                  (em) => `
+                    <button
+                      type="button"
+                      onclick="sendReaction('${em}')"
+                      class="w-11 h-11 rounded-xl hover:bg-slate-800 active:scale-90 text-2xl flex items-center justify-center cursor-pointer transition"
+                    >
+                      ${em}
+                    </button>
+                  `
+                )
+                .join('')}
+            </div>
+          </div>
+
+          ${
+            state.showNicknameModal
+              ? `
+                <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+                  <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-xs w-full space-y-4">
+                    <h3 class="text-base font-black text-white">내 닉네임 변경</h3>
+                    <input
+                      id="change-nick-input"
+                      type="text"
+                      maxlength="14"
+                      value="${escapeHtml(state.nickname)}"
+                      class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-white font-bold text-sm focus:outline-none focus:border-indigo-500"
+                    />
+                    <div class="flex gap-2">
+                      <button
+                        type="button"
+                        onclick="state.showNicknameModal = false; render();"
+                        class="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs cursor-pointer"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        onclick="changeMyNickname()"
+                        class="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-black text-xs cursor-pointer"
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              `
+              : ''
+          }
+        `;
+        return;
+      }
+
+      // =========================================================================
+      // 3) 관리자(MC) 화면 (자동 진행 컨트롤 + 문제 뱅크 관리 + 실시간 접속 감지 & 개별 참가자 제어)
+      // =========================================================================
+      root.innerHTML = `
+        ${userToastHtml}
+        ${questionSplashHtml}
+        ${drumrollModalHtml}
+        ${resultPopupHtml}
+
+        <div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-5">
+          ${
+            state.adminToast
+              ? `<div class="p-3.5 rounded-2xl bg-indigo-600 text-white font-black text-sm shadow-lg">${escapeHtml(state.adminToast)}</div>`
+              : ''
+          }
+
+          <!-- 1단: 게임 환경 설정 바 (목표 승수 / 출제음 / 우승음악 / 드럼롤 / 전체 초기화) -->
+          <div class="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs font-extrabold text-slate-400 mr-1">목표 승수:</span>
+              ${[1, 2, 3, 5]
+                .map(
+                  (w) => `
+                    <button
+                      type="button"
+                      onclick="updateQuizStatePatch({ targetWins: ${w} })"
+                      class="px-3 py-1.5 rounded-xl font-black text-xs cursor-pointer ${
+                        Number(qs.targetWins || 1) === w
+                          ? 'bg-amber-400 text-slate-950'
+                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      }"
+                    >
+                      ${w}승 우승
+                    </button>
+                  `
+                )
+                .join('')}
+
+              <select
+                onchange="playQuestionChime(this.value); updateQuizStatePatch({ chimeStyle: this.value });"
+                class="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 cursor-pointer"
+              >
+                <option value="classic_dingdong" ${qs.chimeStyle === 'classic_dingdong' ? 'selected' : ''}>🔔 출제음: 기본 띵동</option>
+                <option value="quiz_show" ${qs.chimeStyle === 'quiz_show' ? 'selected' : ''}>🎺 출제음: 퀴즈쇼 팡파르</option>
+                <option value="arcade_coin" ${qs.chimeStyle === 'arcade_coin' ? 'selected' : ''}>🪙 출제음: 아케이드 코인</option>
+                <option value="grand_gong" ${qs.chimeStyle === 'grand_gong' ? 'selected' : ''}>🥁 출제음: 웅장한 북소리</option>
+                <option value="mute" ${qs.chimeStyle === 'mute' ? 'selected' : ''}>🔇 출제음: 무음</option>
+              </select>
+
+              <select
+                onchange="playVictoryMusic(this.value); updateQuizStatePatch({ victoryMusicStyle: this.value });"
+                class="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-amber-300 cursor-pointer"
+              >
+                <option value="royal_fanfare" ${qs.victoryMusicStyle === 'royal_fanfare' ? 'selected' : ''}>👑 우승음악: 대관식 오케스트라</option>
+                <option value="jackpot_celebration" ${qs.victoryMusicStyle === 'jackpot_celebration' ? 'selected' : ''}>🥇 우승음악: 올림픽 금메달 축가</option>
+                <option value="champion_anthem" ${qs.victoryMusicStyle === 'champion_anthem' ? 'selected' : ''}>🏆 우승음악: 스타디움 앤섬</option>
+                <option value="festival_finale" ${qs.victoryMusicStyle === 'festival_finale' ? 'selected' : ''}>🎉 우승음악: 그랜드 피날레</option>
+                <option value="mute" ${qs.victoryMusicStyle === 'mute' ? 'selected' : ''}>🔇 우승음악: 무음</option>
+              </select>
+
+              <button
+                type="button"
+                onclick="updateQuizStatePatch({ drumrollEnabled: !(qs.drumrollEnabled !== false) })"
+                class="px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer ${
+                  qs.drumrollEnabled !== false
+                    ? 'bg-indigo-600/30 border border-indigo-400 text-indigo-200'
+                    : 'bg-slate-800 text-slate-400'
+                }"
+              >
+                🥁 드럼롤 ${qs.drumrollEnabled !== false ? 'ON' : 'OFF'}
+              </button>
+            </div>
+
+            <div class="flex items-center gap-2">
+              ${
+                qs.status === 'answer_revealed'
+                  ? `
+                    <button
+                      type="button"
+                      onclick="state.dismissedResultKey = null; render();"
+                      class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-black text-xs cursor-pointer"
+                    >
+                      📊 결과 팝업 다시 열기
+                    </button>
+                  `
+                  : ''
+              }
+              <button
+                type="button"
+                onclick="reviveAllForNextRound()"
+                class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs cursor-pointer"
+              >
+                전원 부활 (다음 라운드)
+              </button>
+              <button
+                type="button"
+                onclick="resetEntireGame()"
+                class="px-3.5 py-1.5 rounded-xl bg-rose-600/80 hover:bg-rose-600 text-white font-black text-xs cursor-pointer"
+              >
+                전체 초기화
+              </button>
+            </div>
+          </div>
+
+          <!-- 2단: 스마트 라운드 자동 진행(Auto-Play) 컨트롤러 -->
+          <div class="bg-slate-900 border-2 ${qs.autoPlayEnabled ? 'border-emerald-500/80' : 'border-slate-800'} rounded-3xl p-5 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="space-y-0.5">
+                <div class="flex items-center gap-2">
+                  <span class="px-2.5 py-0.5 rounded-full text-xs font-black ${
+                    qs.autoPlayEnabled
+                      ? qs.autoPlayStopAfterCurrent
+                        ? 'bg-amber-400 text-slate-950'
+                        : 'bg-emerald-400 text-slate-950 animate-pulse'
+                      : 'bg-slate-800 text-slate-400'
+                  }">
+                    ${
+                      qs.autoPlayEnabled
+                        ? qs.autoPlayStopAfterCurrent
+                          ? '⏸ 이번 문제 후 정지 예약됨'
+                          : '▶ 자동 진행 작동 중'
+                        : '자동 진행 대기'
+                    }
+                  </span>
+                  <h2 class="text-base sm:text-lg font-black text-white">라운드 자동 진행 (오토 파일럿)</h2>
+                  ${
+                    qs.nextAutoQuestionAt
+                      ? `<span id="admin-auto-next-badge" class="text-xs font-black text-indigo-300">다음 자동 문제까지 ${state.autoNextRemainingSec !== null ? state.autoNextRemainingSec : 8}초</span>`
+                      : ''
+                  }
+                </div>
+                <p class="text-xs text-slate-400">
+                  최후의 1인이 남을 때까지 남은 생존자 수에 맞춰 난이도(쉬움→보통→어려움→극악)와 제한시간을 자동 조절하며 진행합니다.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onclick="toggleAutoPlayMode()"
+                class="px-5 py-3 rounded-2xl font-black text-sm shadow-lg cursor-pointer transition ${
+                  qs.autoPlayEnabled
+                    ? qs.autoPlayStopAfterCurrent
+                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                      : 'bg-rose-600 hover:bg-rose-500 text-white'
+                    : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                }"
+              >
+                ${
+                  qs.autoPlayEnabled
+                    ? qs.autoPlayStopAfterCurrent
+                      ? '▶ 정지 예약 취소 (계속 자동 진행)'
+                      : '⏸ 이번 문제 후 자동 진행 정지'
+                    : '▶ 라운드 자동 진행 시작'
+                }
+              </button>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-2 border-t border-slate-800">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-400 mb-1">자동 진행 주제 (기본 또는 사설 주제)</label>
+                <div class="flex gap-1.5">
+                  <select
+                    onchange="updateAutoPlaySetting({ autoPlayTopic: this.value })"
+                    class="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold text-white"
+                  >
+                    ${
+                      !TOPICS.includes(qs.autoPlayTopic || '일반상식')
+                        ? `<option value="${escapeHtml(qs.autoPlayTopic)}" selected>✨ 사설: ${escapeHtml(qs.autoPlayTopic)}</option>`
+                        : ''
+                    }
+                    ${TOPICS.map(
+                      (t) =>
+                        `<option value="${t}" ${(qs.autoPlayTopic || '일반상식') === t ? 'selected' : ''}>${t}</option>`
+                    ).join('')}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-slate-400 mb-1">난이도 진행 방식</label>
+                <select
+                  onchange="updateAutoPlaySetting({ autoPlayDifficultyMode: this.value })"
+                  class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold text-white"
+                >
+                  <option value="auto" ${(qs.autoPlayDifficultyMode || 'auto') === 'auto' ? 'selected' : ''}>📈 생존자 비례 자동 상승 (추천)</option>
+                  <option value="쉬움" ${qs.autoPlayDifficultyMode === '쉬움' ? 'selected' : ''}>쉬움 고정</option>
+                  <option value="보통" ${qs.autoPlayDifficultyMode === '보통' ? 'selected' : ''}>보통 고정</option>
+                  <option value="어려움" ${qs.autoPlayDifficultyMode === '어려움' ? 'selected' : ''}>어려움 고정</option>
+                  <option value="극악" ${qs.autoPlayDifficultyMode === '극악' ? 'selected' : ''}>극악 고정</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-slate-400 mb-1">문제 풀이 제한시간 설정</label>
+                <select
+                  onchange="updateAutoPlaySetting({ autoPlayQuestionDurationSec: Number(this.value) })"
+                  class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold text-white"
+                >
+                  <option value="0" ${Number(qs.autoPlayQuestionDurationSec || 0) === 0 ? 'selected' : ''}>⚡ 스마트 자동 8~15초 (추천)</option>
+                  <option value="7" ${Number(qs.autoPlayQuestionDurationSec) === 7 ? 'selected' : ''}>7초 고정 (스피드)</option>
+                  <option value="8" ${Number(qs.autoPlayQuestionDurationSec) === 8 ? 'selected' : ''}>8초 고정</option>
+                  <option value="10" ${Number(qs.autoPlayQuestionDurationSec) === 10 ? 'selected' : ''}>10초 고정 (표준 추천)</option>
+                  <option value="12" ${Number(qs.autoPlayQuestionDurationSec) === 12 ? 'selected' : ''}>12초 고정 (여유 추천)</option>
+                  <option value="15" ${Number(qs.autoPlayQuestionDurationSec) === 15 ? 'selected' : ''}>15초 고정</option>
+                  <option value="20" ${Number(qs.autoPlayQuestionDurationSec) === 20 ? 'selected' : ''}>20초 고정</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-slate-400 mb-1">문제 간 쉬는 시간 (인터미션)</label>
+                <select
+                  onchange="updateAutoPlaySetting({ autoPlayIntervalSec: Number(this.value) })"
+                  class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs font-bold text-white"
+                >
+                  ${[5, 8, 10, 15]
+                    .map(
+                      (s) =>
+                        `<option value="${s}" ${Number(qs.autoPlayIntervalSec || 8) === s ? 'selected' : ''}>결과 발표 후 ${s}초 대기${s === 8 ? ' (추천)' : ''}</option>`
+                    )
+                    .join('')}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3단: 좌측 수동 문제 출제 & 뱅크 관리 / 우측 실시간 참가자 관리 -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            <!-- 좌측 (7칸): 문제 출제 & AI 문제 뱅크 -->
+            <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 class="text-base font-black text-white">문제 뽑기 & 수동 출제</h3>
+                  <p class="text-xs text-slate-400">
+                    미사용 뱅크: <strong class="text-emerald-400">${state.unusedBankCount}문제</strong> 대기 중 · 사용 완료(이동됨): <strong class="text-indigo-300">${state.usedQuestionCount}문제</strong>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onclick="refillBankManually()"
+                  class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 font-black text-xs cursor-pointer"
+                >
+                  + AI 뱅크 미리 충전
+                </button>
+              </div>
+
+              <!-- 주제 & 난이도 선택 (사설 자유 주제 직접 입력 포함) -->
+              <div class="space-y-2.5">
+                <div class="flex flex-wrap gap-1.5">
+                  ${TOPICS.map(
+                    (t) => `
+                      <button
+                        type="button"
+                        onclick="state.selectedTopic = '${t}'; render();"
+                        class="px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer ${
+                          state.selectedTopic === t
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-950 text-slate-300 hover:bg-slate-800'
+                        }"
+                      >
+                        ${t}
+                      </button>
+                    `
+                  ).join('')}
+                  ${
+                    !TOPICS.includes(state.selectedTopic)
+                      ? `
+                        <span class="px-3 py-1.5 rounded-xl text-xs font-black bg-amber-400 text-slate-950">
+                          ✨ 사설 주제: ${escapeHtml(state.selectedTopic)}
+                        </span>
+                      `
+                      : ''
+                  }
+                </div>
+
+                <!-- 사설 주제(자유 입력) 입력 바 -->
+                <div class="flex flex-wrap items-center gap-1.5 bg-slate-950 p-2 rounded-2xl border border-slate-800">
+                  <span class="px-2 py-1 rounded-lg bg-amber-400/15 text-amber-300 font-black text-[11px] shrink-0">
+                    ✨ 사설 주제
+                  </span>
+                  <input
+                    id="admin-custom-topic-input"
+                    type="text"
+                    value="${escapeHtml(state.customTopicInput)}"
+                    oninput="state.customTopicInput = this.value"
+                    onkeydown="if (event.key === 'Enter') { event.preventDefault(); applyCustomTopicInput(true); }"
+                    placeholder="원하는 주제를 자유롭게 입력 (예: 리그오브레전드, K-POP, 삼국지)"
+                    class="flex-1 min-w-[180px] px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-bold text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                  />
+                  <button
+                    type="button"
+                    onclick="applyCustomTopicInput(false)"
+                    class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-black text-xs cursor-pointer shrink-0"
+                  >
+                    수동 주제 적용
+                  </button>
+                  <button
+                    type="button"
+                    onclick="applyCustomTopicInput(true)"
+                    class="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs cursor-pointer shrink-0"
+                  >
+                    자동진행에도 적용
+                  </button>
+                </div>
+
+                <div class="flex flex-wrap gap-1.5">
+                  ${DIFFICULTIES.map(
+                    (d) => `
+                      <button
+                        type="button"
+                        onclick="state.selectedDifficulty = '${d}'; render();"
+                        class="px-3 py-1 rounded-lg text-xs font-bold cursor-pointer ${
+                          state.selectedDifficulty === d
+                            ? 'bg-amber-400 text-slate-950'
+                            : 'bg-slate-950 text-slate-400 hover:bg-slate-800'
+                        }"
+                      >
+                        난이도: ${d}
+                      </button>
+                    `
+                  ).join('')}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onclick="generateAiQuiz()"
+                ${state.isGeneratingAi ? 'disabled' : ''}
+                class="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white font-black text-sm shadow-md cursor-pointer transition"
+              >
+                ${state.isGeneratingAi ? '문제를 불러오는 중...' : `새 문제 뽑기 (${state.selectedTopic} · ${state.selectedDifficulty})`}
+              </button>
+
+              <!-- 문제 텍스트 & 정답 O/X & 해설 입력 (서버 동기화에 덮어써지지 않는 독립 draft 상태 사용!) -->
+              <div class="space-y-3 pt-2 border-t border-slate-800">
+                <div>
+                  <label class="block text-xs font-bold text-slate-400 mb-1">출제할 문제 내용</label>
+                  <textarea
+                    id="admin-question-input"
+                    rows="2"
+                    oninput="state.draftQuestion = this.value"
+                    placeholder="문제를 입력하거나 위 버튼으로 뽑아주세요"
+                    class="w-full p-3 rounded-2xl bg-slate-950 border border-slate-800 text-sm font-bold text-white focus:outline-none focus:border-indigo-500"
+                  >${escapeHtml(state.draftQuestion)}</textarea>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onclick="state.draftAnswer = 'O'; render();"
+                    class="py-2.5 rounded-xl font-black text-sm cursor-pointer border-2 ${
+                      state.draftAnswer === 'O'
+                        ? 'bg-blue-600 border-white text-white'
+                        : 'bg-slate-950 border-slate-800 text-slate-400'
+                    }"
+                  >
+                    정답: O
+                  </button>
+                  <button
+                    type="button"
+                    onclick="state.draftAnswer = 'X'; render();"
+                    class="py-2.5 rounded-xl font-black text-sm cursor-pointer border-2 ${
+                      state.draftAnswer === 'X'
+                        ? 'bg-rose-600 border-white text-white'
+                        : 'bg-slate-950 border-slate-800 text-slate-400'
+                    }"
+                  >
+                    정답: X
+                  </button>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-400 mb-1">정답 해설</label>
+                  <input
+                    id="admin-explanation-input"
+                    type="text"
+                    oninput="state.draftExplanation = this.value"
+                    value="${escapeHtml(state.draftExplanation)}"
+                    placeholder="정답 공개 시 표시할 해설"
+                    class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs sm:text-sm font-bold text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <!-- 출제 및 마감 컨트롤 버튼 -->
+                ${
+                  qs.status === 'question_active'
+                    ? `
+                      <div class="p-4 rounded-2xl bg-indigo-950/60 border border-indigo-500/50 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <span class="text-xs font-bold text-indigo-300 block">현재 문제 진행 중</span>
+                          <strong id="admin-live-timer" class="text-xl font-black text-amber-300">
+                            ${state.remainingSeconds !== null ? state.remainingSeconds + '초 남음' : '진행 중'}
+                          </strong>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onclick="extendQuestionTime(5)"
+                            class="px-3.5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs cursor-pointer shadow-md"
+                          >
+                            ⏱️ +5초 연장
+                          </button>
+                          <button
+                            type="button"
+                            onclick="extendQuestionTime(10)"
+                            class="px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs cursor-pointer shadow-md"
+                          >
+                            ⏱️ +10초 연장
+                          </button>
+                          <button
+                            type="button"
+                            onclick="revealAnswerNow()"
+                            class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs sm:text-sm cursor-pointer shadow-lg"
+                          >
+                            즉시 마감 · 정답 공개
+                          </button>
+                        </div>
+                      </div>
+                    `
+                    : `
+                      <div class="grid grid-cols-3 gap-2 pt-1">
+                        ${[8, 10, 13]
+                          .map(
+                            (sec) => `
+                              <button
+                                type="button"
+                                onclick="startQuestionTimer(${sec})"
+                                class="py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs sm:text-sm cursor-pointer shadow-md"
+                              >
+                                ▶ ${sec}초 출제
+                              </button>
+                            `
+                          )
+                          .join('')}
+                      </div>
+                    `
+                }
+              </div>
+            </div>
+
+            <!-- 우측 (5칸): 실시간 참가자 현황 및 유령/자리비움 감지 & 개별 관리 -->
+            <div class="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 class="text-base font-black text-white">
+                    참가자 관리 (${state.participants.length}명)
+                  </h3>
+                  <p class="text-[11px] text-slate-400">
+                    🟢온라인 · 🟡자리비움(다른 앱) · 🔴30초 이상 접속 끊김
+                  </p>
+                </div>
+                ${
+                  offlineUsers.length > 0
+                    ? `
+                      <button
+                        type="button"
+                        onclick="adminPruneOfflineParticipants()"
+                        class="px-3 py-1.5 rounded-xl bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/40 text-rose-200 font-black text-xs cursor-pointer"
+                      >
+                        🧹 끊긴 인원 정리 (${offlineUsers.length}명)
+                      </button>
+                    `
+                    : ''
+                }
+              </div>
+
+              <div class="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                ${
+                  state.participants.length > 0
+                    ? state.participants
+                        .map((p) => {
+                          const pres = getParticipantPresenceStatus(p);
+                          const alive = p.isAlive !== false;
+                          return `
+                            <div class="p-3 rounded-2xl bg-slate-950 border ${alive ? 'border-slate-800' : 'border-slate-900 opacity-75'} flex flex-wrap items-center justify-between gap-2">
+                              <div class="flex items-center gap-2 min-w-0">
+                                <span id="presence-dot-${p.id}" class="w-2.5 h-2.5 rounded-full shrink-0 ${pres.dotClass}"></span>
+                                ${state.currentRoomHostClientId && p.id === state.currentRoomHostClientId ? `<span class="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 text-[10px] font-black">👑방장</span>` : ""}<span class="font-black text-xs sm:text-sm text-white truncate">${escapeHtml(p.nickname)}</span>
+                                <span class="px-2 py-0.5 rounded-md text-[10px] font-black ${alive ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'}">
+                                  ${alive ? '생존' : '탈락'}
+                                </span>
+                                <span class="px-2 py-0.5 rounded-md bg-amber-400/15 text-amber-300 font-black text-[10px]">
+                                  ${p.wins || 0}승
+                                </span>
+                                ${
+                                  p.choice
+                                    ? `<span class="px-2 py-0.5 rounded-md font-black text-[10px] ${p.choice === 'O' ? 'bg-blue-500/20 text-blue-300' : 'bg-rose-500/20 text-rose-300'}">선택: ${p.choice}</span>`
+                                    : ''
+                                }
+                              </div>
+
+                              <div class="flex items-center gap-1 ml-auto">
+                                <span id="presence-badge-${p.id}" class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${pres.badgeClass}">
+                                  ${pres.label}
+                                </span>
+                                <button
+                                  type="button"
+                                  title="생존/탈락 전환"
+                                  onclick="adminControlParticipant('${p.id}', 'TOGGLE_ALIVE')"
+                                  class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 cursor-pointer"
+                                >
+                                  ${alive ? '탈락처리' : '부활'}
+                                </button>
+                                <button
+                                  type="button"
+                                  title="승수 +1"
+                                  onclick="adminControlParticipant('${p.id}', 'INC_WIN')"
+                                  class="px-1.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-amber-300 cursor-pointer"
+                                >
+                                  +1승
+                                </button>
+                                ${
+                                  Number(p.wins || 0) > 0
+                                    ? `
+                                      <button
+                                        type="button"
+                                        title="승수 -1"
+                                        onclick="adminControlParticipant('${p.id}', 'DEC_WIN')"
+                                        class="px-1.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-400 cursor-pointer"
+                                      >
+                                        -1
+                                      </button>
+                                    `
+                                    : ''
+                                }
+                                <button
+                                  type="button"
+                                  title="강퇴(제거)"
+                                  onclick="adminControlParticipant('${p.id}', 'KICK')"
+                                  class="px-2 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-700 text-[11px] font-black text-rose-300 hover:text-white cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          `;
+                        })
+                        .join('')
+                    : '<div class="text-center py-8 text-xs text-slate-500">아직 입장한 참가자가 없습니다.</div>'
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // 포커스 복원 (입력 중이던 문제/해설/비밀번호 창이 있으면 커서 위치까지 그대로 복구)
+      if (activeId && activeId !== 'admin-notice-input') {
+        const restoredEl = document.getElementById(activeId);
+        if (restoredEl) {
+          if (activeVal !== null && restoredEl.value !== activeVal) {
+            restoredEl.value = activeVal;
+          }
+          restoredEl.focus();
+          if (selStart !== null && selEnd !== null && restoredEl.setSelectionRange) {
+            try {
+              restoredEl.setSelectionRange(selStart, selEnd);
+            } catch (e) {}
+          }
+        }
+      }
+    }
+
+    // Sync shared portal nickname and load OX Room Lobby
+    (function initOxWithSharedAuth() {
+      if (window.ArcadeAuth) {
+        const prof = window.ArcadeAuth.getProfile();
+        if (prof && prof.nickname) {
+          state.nickname = prof.nickname;
+          localStorage.setItem('ox_nick_v3', prof.nickname);
+        }
+      }
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('admin') === '2601') {
+        state.role = 'admin';
+        localStorage.setItem('ox_role_v3', 'admin');
+      } else {
+        state.role = 'home'; // Show Room Create / Room Join Lobby first!
+      }
+      fetchOxRooms();
+      setInterval(() => {
+        if (state.role === 'home') fetchOxRooms();
+      }, 3000);
+    })();
+
+    render();
+  </script>
+</body>
+</html>
