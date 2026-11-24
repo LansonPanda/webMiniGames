@@ -1,0 +1,74 @@
+[
+  {
+    "id": "marble",
+    "title": "마블 드롭 서바이벌",
+    "badge": "LIVE",
+    "icon": "🔮",
+    "category": "main",
+    "path": "/games/marble/"
+  },
+  {
+    "id": "ox-quiz",
+    "title": "OX 서바이벌 퀴즈",
+    "badge": "LIVE",
+    "icon": "⭕",
+    "category": "main",
+    "path": "/games/ox-quiz/"
+  },
+  {
+    "id": "fishing",
+    "title": "힐링 낚시터",
+    "badge": "LIVE",
+    "icon": "🎣",
+    "category": "main",
+    "path": "/games/fishing/"
+  },
+  {
+    "id": "fishing-raid",
+    "title": "낚시 레이드",
+    "badge": "PARTY",
+    "icon": "🔱",
+    "category": "main",
+    "path": "/games/fishing-raid/"
+  },
+  {
+    "id": "horse-racing",
+    "title": "로얄 경마",
+    "badge": "LIVE",
+    "icon": "🏇",
+    "category": "main",
+    "path": "/games/horse-racing/"
+  },
+  {
+    "id": "blackjack",
+    "title": "로얄 블랙잭",
+    "badge": "LIVE",
+    "icon": "🃏",
+    "category": "main",
+    "path": "/games/blackjack/"
+  },
+  {
+    "id": "black-white",
+    "title": "흑과 백",
+    "badge": "1:1",
+    "icon": "🎭",
+    "category": "minigame",
+    "path": "/games/black-white/"
+  },
+  {
+    "id": "russian-roulette",
+    "title": "러시안 룰렛",
+    "badge": "1:1",
+    "icon": "🔫",
+    "category": "minigame",
+    "path": "/games/russian-roulette/"
+  },
+  {
+    "id": "dice-21",
+    "title": "다이스 21",
+    "badge": "1:1",
+    "icon": "🎲",
+    "category": "minigame",
+    "path": "/games/dice-21/"
+  }
+]

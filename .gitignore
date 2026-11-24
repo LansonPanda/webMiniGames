@@ -1,0 +1,12 @@
+node_modules/
+.env
+*.log
+.DS_Store
+Thumbs.db
+users_db.json
+custom_maps.json
+horse_stats.json
+ox_quiz_bank.json
+ox_used_quiz_bank.json
+server_settings.json
+fishing_top_catches.json

@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>🔫 러시안 룰렛 | webMiniGames</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared/auth-client.js?v=1.8.18"></script>
+  <script src="/shared/admin-panel.js?v=1.8.18"></script>
+  <style>
+    body { background: #070a12; color: #f8fafc; font-family: Pretendard, -apple-system, sans-serif; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-3 sm:p-5">
+  <div id="toastBox" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-[#5851f6] text-white text-xs sm:text-sm font-extrabold shadow-2xl"></div>
+
+  <div class="w-full max-w-lg bg-[#111625] border border-[#1f2942] rounded-3xl p-5 shadow-2xl space-y-4">
+    <div class="flex items-center justify-between gap-2 border-b border-[#1d2438] pb-3">
+      <div>
+        <span class="text-[10px] font-black text-rose-300 uppercase">1:1 MINIGAME · RUSSIAN ROULETTE</span>
+        <h1 class="text-lg sm:text-xl font-black text-white">🔫 러시안 룰렛</h1>
+      </div>
+      <a href="/" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700">← 홈</a>
+    </div>
+
+    <div id="viewLobby" class="space-y-4">
+      <div class="p-3.5 rounded-2xl bg-[#080c17] border border-[#232f52] space-y-2">
+        <div class="text-xs font-extrabold text-[#7c93ff]">👑 새 1:1 대결 방 만들기</div>
+        <form id="createForm" class="space-y-2">
+          <div class="flex gap-2">
+            <input id="roomTitleInput" type="text" maxlength="24" placeholder="방 제목 (예: 목숨 건 한판)" class="flex-1 min-w-0 bg-[#111625] border border-[#1f2942] rounded-xl px-3 py-2 text-xs sm:text-sm font-bold text-white outline-none focus:border-[#5851f6]" />
+            <button type="submit" class="px-4 py-2 rounded-xl bg-[#5851f6] hover:bg-[#4b44e6] text-white font-black text-xs sm:text-sm shrink-0">+ 방 만들기</button>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="flex items-center gap-1.5 bg-[#111625] border border-[#1f2942] rounded-xl px-3 py-1.5">
+              <span class="text-[11px] font-bold text-amber-300 shrink-0">⭐ 입장비</span>
+              <select id="roomEntryFeeInput" class="w-full bg-[#111625] text-xs font-black text-amber-300 text-right outline-none">
+                <option value="0">무료 (0 스타)</option>
+                <option value="100">100 스타</option>
+                <option value="500">500 스타</option>
+                <option value="1000">1,000 스타</option>
+                <option value="3000">3,000 스타</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-1.5 bg-[#111625] border border-[#1f2942] rounded-xl px-3 py-1.5">
+              <span class="text-[11px] font-bold text-slate-400 shrink-0">🔒 비번</span>
+              <input id="roomPwInput" type="password" inputmode="numeric" maxlength="4" placeholder="4자리(선택)" class="w-full bg-transparent text-xs font-bold text-white text-right outline-none" />
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-extrabold text-slate-300">🚪 열린 대결 방</span>
+          <span id="roomCountBadge" class="font-bold text-cyan-400">0개</span>
+        </div>
+        <div id="roomsList" class="space-y-2 max-h-64 overflow-y-auto"></div>
+      </div>
+    </div>
+
+    <div id="viewGame" class="hidden space-y-4">
+      <div class="flex items-center justify-between gap-2 bg-[#080c17] border border-[#232f52] rounded-2xl px-3.5 py-2.5">
+        <div class="min-w-0">
+          <div id="gameRoomTitle" class="text-sm font-black text-white truncate"></div>
+          <div id="gameRoomSub" class="text-[11px] text-slate-400"></div>
+        </div>
+        <button id="btnLeaveRoom" type="button" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 shrink-0">🚪 나가기</button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2.5 text-center">
+        <div id="p0Card" class="p-3 rounded-2xl bg-[#080c17] border border-[#1f2942]">
+          <div id="p0Name" class="text-xs font-black text-cyan-300 truncate">-</div>
+          <div id="p0Wins" class="text-xl font-black text-white mt-0.5">0승</div>
+          <div id="p0Turn" class="text-[11px] text-slate-400 mt-0.5">대기</div>
+        </div>
+        <div id="p1Card" class="p-3 rounded-2xl bg-[#080c17] border border-[#1f2942]">
+          <div id="p1Name" class="text-xs font-black text-rose-300 truncate">대기 중</div>
+          <div id="p1Wins" class="text-xl font-black text-white mt-0.5">0승</div>
+          <div id="p1Turn" class="text-[11px] text-slate-400 mt-0.5">대기</div>
+        </div>
+      </div>
+
+      <div id="waitingBox" class="hidden p-4 rounded-2xl bg-[#080c17] border border-[#232f52] text-center space-y-3">
+        <p id="waitingMsg" class="text-xs font-bold text-slate-300"></p>
+        <div id="guestReadyControls" class="hidden flex justify-center">
+          <button id="btnGuestReady" type="button" class="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black shadow-lg">🙋 준비 완료 (게임 시작 동의)</button>
+        </div>
+        <div id="hostStartControls" class="hidden flex gap-2 justify-center">
+          <button id="btnAddBot" type="button" class="px-3.5 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/40 text-indigo-200 text-xs font-extrabold">🤖 연습 봇 추가</button>
+          <button id="btnStartMatch" type="button" class="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black">🚀 대결 시작!</button>
+        </div>
+      </div>
+
+      <div id="playBox" class="hidden space-y-3">
+        <!-- 6 Chamber visual -->
+        <div class="p-4 rounded-2xl bg-[#080c17] border border-[#1f2942] text-center space-y-3">
+          <div id="chamberDots" class="flex justify-center gap-2.5"></div>
+          <div id="oddsText" class="text-xs font-black text-amber-300"></div>
+          <div id="logText" class="text-xs font-bold text-slate-200 bg-slate-900/90 rounded-xl px-3 py-2 border border-slate-800"></div>
+        </div>
+
+        <div id="resultBanner" class="hidden p-3.5 rounded-2xl bg-amber-500/15 border border-amber-400/50 text-center space-y-2">
+          <div id="resultText" class="text-base font-black text-amber-300"></div>
+          <div id="rematchStatusText" class="text-[11px] font-bold text-slate-300"></div>
+          <div class="flex justify-center gap-2">
+            <button id="btnGuestRematchReady" type="button" class="hidden px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow">✅ 다시하기 동의 (준비 완료)</button>
+            <button id="btnRematch" type="button" class="hidden px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow">🔁 한 판 더!</button>
+          </div>
+        </div>
+
+        <div id="actionButtons" class="space-y-2">
+          <button id="btnPull" type="button" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-500 to-orange-500 hover:brightness-110 disabled:opacity-40 text-white font-black text-base shadow-lg transition active:scale-95">
+            🔫 방아쇠 당기기!
+          </button>
+          <button id="btnPass" type="button" class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 border border-slate-700 text-xs font-extrabold text-amber-300">
+            ⏭️ 턴 넘기기 (1회)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const GAME_TYPE = 'russian-roulette';
+    const CLIENT_UID = window.ArcadeAuth ? window.ArcadeAuth.getClientId() : ('u_' + Math.random().toString(36).slice(2, 9));
+    const prof = window.ArcadeAuth ? window.ArcadeAuth.getProfile() : null;
+    if (!prof || !prof.nickname) { window.location.href = '/'; }
+    const MY_NICK = prof ? prof.nickname : '플레이어';
+
+    const rrSfx = (() => {
+      let ctx = null;
+      const getCtx = () => {
+        if (!ctx) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC) ctx = new AC();
+        }
+        if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+        return ctx;
+      };
+      const tone = (freq, dur, type = 'sine', vol = 0.14, delay = 0) => {
+        const c = getCtx(); if (!c) return;
+        const o = c.createOscillator(), g = c.createGain();
+        o.type = type; o.frequency.setValueAtTime(freq, c.currentTime + delay);
+        g.gain.setValueAtTime(vol, c.currentTime + delay);
+        g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + delay + dur);
+        o.connect(g); g.connect(c.destination);
+        o.start(c.currentTime + delay); o.stop(c.currentTime + delay + dur + 0.02);
+      };
+      return {
+        tick: () => tone(740, 0.045, 'square', 0.07),
+        lock: () => { tone(587, 0.09, 'triangle', 0.15); tone(880, 0.16, 'triangle', 0.16, 0.08); },
+        click: () => { tone(900, 0.035, 'triangle', 0.16); tone(320, 0.06, 'sine', 0.12, 0.03); },
+        bang: () => { tone(120, 0.35, 'sawtooth', 0.25); tone(75, 0.45, 'square', 0.22, 0.03); },
+        pass: () => tone(420, 0.12, 'sine', 0.12),
+        victory: () => { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.22, 'triangle', 0.18, i * 0.09)); }
+      };
+    })();
+
+    const socket = io('/minigames');
+    let currentRoom = null;
+    let roomsList = [];
+    let rrRouletteTimer = null;
+    let rrRouletteActive = false;
+    let lastChamberSeen = null;
+    let lastRrStatus = null;
+
+    function showToast(msg) {
+      if (typeof msg === "string" && (msg.indexOf("이미 생성한 방") !== -1 || msg.indexOf("이미 입장 중인 방") !== -1) && window.ArcadeMyRooms) { window.ArcadeMyRooms.openConflictPopup(msg); }
+      const b = document.getElementById('toastBox');
+      b.textContent = msg;
+      b.classList.remove('hidden');
+      setTimeout(() => b.classList.add('hidden'), 2400);
+    }
+
+    function renderLobby() {
+      document.getElementById('viewLobby').classList.remove('hidden');
+      document.getElementById('viewGame').classList.add('hidden');
+      document.getElementById('roomCountBadge').textContent = `${roomsList.length}개`;
+      const box = document.getElementById('roomsList');
+      if (roomsList.length === 0) {
+        box.innerHTML = '<div class="p-6 rounded-2xl bg-[#080c17] border border-[#1f2942] text-center text-xs text-slate-500">열려 있는 방이 없습니다. 새 대결 방을 만들어보세요!</div>';
+        return;
+      }
+      box.innerHTML = '';
+      roomsList.forEach(rm => {
+        const isHostRoom = rm.hostClientId === CLIENT_UID;
+        const isMemberRoom = isHostRoom || (Array.isArray(rm.playerIds) && rm.playerIds.includes(CLIENT_UID));
+        const card = document.createElement('div');
+        card.className = isMemberRoom
+          ? 'p-3 rounded-2xl bg-amber-500/10 border-2 border-amber-400/70 flex items-center justify-between gap-2 shadow-lg shadow-amber-500/10'
+          : 'p-3 rounded-2xl bg-[#080c17] border border-[#1f2942] flex items-center justify-between gap-2';
+        card.innerHTML = `
+          <div class="min-w-0">
+            <div class="text-sm font-black text-white truncate flex items-center gap-1.5">
+              ${isMemberRoom ? `<span class="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-black shrink-0">${isHostRoom ? '👑 내 방' : '🟢 참여 중'}</span>` : ''}
+              <span class="truncate">${rm.hasPassword ? '🔒 ' : ''}${rm.title}</span>
+            </div>
+            <div class="text-[11px] text-slate-400">👑 ${rm.hostNickname} · 인원 ${rm.playerCount}/2 · <span class="font-extrabold ${(rm.entryFee || 0) > 0 ? 'text-amber-300' : 'text-emerald-300'}">${(rm.entryFee || 0) > 0 ? ('⭐ ' + Number(rm.entryFee).toLocaleString() + ' 스타 내기') : '🆓 무료'}</span> · ${rm.status === 'PLAYING' ? '🔥 대결 중' : '⏳ 대기 중'}</div>
+          </div>
+          <div class="flex gap-1.5 shrink-0">
+            ${(isMemberRoom || (rm.playerCount < 2 && rm.status === 'WAITING')) ? `<button data-act="play" class="px-3 py-1.5 rounded-xl ${isMemberRoom ? 'bg-emerald-500 text-slate-950' : 'bg-[#5851f6] text-white'} text-xs font-extrabold">${isMemberRoom ? '복귀' : '참가'}</button>` : ''}
+            ${!isMemberRoom ? '<button data-act="spectate" class="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold">👀 관전</button>' : ''}
+          </div>
+        `;
+        card.querySelectorAll('button').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const act = btn.getAttribute('data-act');
+            if (act === 'play' && !isMemberRoom && Number(rm.entryFee) > 0) {
+              if (!window.confirm(`⭐ [${rm.title}] 방은 참가비 ${Number(rm.entryFee).toLocaleString()} 스타가 걸린 대결방입니다.\n입장하시겠습니까?`)) return;
+            }
+            let pw = '';
+            if (rm.hasPassword && rm.hostClientId !== CLIENT_UID) {
+              pw = prompt('방 비밀번호(숫자 4자리):') || '';
+              if (!/^\d{4}$/.test(pw.trim())) { showToast('비밀번호 4자리를 입력해주세요.'); return; }
+            }
+            socket.emit('mg_join_room', { roomId: rm.id, clientId: CLIENT_UID, nickname: MY_NICK, password: pw.trim(), mode: btn.getAttribute('data-act') }, (resp) => {
+              if (!resp || !resp.ok) { showToast(resp?.error || '입장 실패'); return; }
+              currentRoom = resp.room;
+              renderGame();
+            });
+          });
+        });
+        box.appendChild(card);
+      });
+    }
+
+    function renderGame() {
+      if (!currentRoom) return renderLobby();
+      document.getElementById('viewLobby').classList.add('hidden');
+      document.getElementById('viewGame').classList.remove('hidden');
+
+      const rm = currentRoom;
+      const myIdx = rm.players.findIndex(p => p.clientId === CLIENT_UID);
+      const isHost = rm.hostClientId === CLIENT_UID;
+      const p0 = rm.players[0];
+      const p1 = rm.players[1];
+
+      document.getElementById('gameRoomTitle').textContent = `${rm.hasPassword ? '🔒 ' : ''}${rm.title}`;
+      document.getElementById('gameRoomSub').textContent = `👑 방장: ${rm.hostNickname} · ${(rm.entryFee || 0) > 0 ? ('⭐ 입장비 ' + Number(rm.entryFee).toLocaleString() + ' 스타 (승자 독식 ' + Number(rm.entryFee * 2).toLocaleString() + ' 스타)') : '🆓 무료 대결'} · 관전 ${rm.spectators.length}명`;
+      document.getElementById('p0Name').textContent = p0 ? p0.nickname : '빈 자리';
+      document.getElementById('p1Name').textContent = p1 ? p1.nickname : '상대 대기 중';
+      document.getElementById('p0Wins').textContent = `${p0?.wins || 0}승`;
+      document.getElementById('p1Wins').textContent = `${p1?.wins || 0}승`;
+
+      const waitingBox = document.getElementById('waitingBox');
+      const playBox = document.getElementById('playBox');
+
+      if (rm.status === 'WAITING') {
+        waitingBox.classList.remove('hidden');
+        playBox.classList.add('hidden');
+        document.getElementById('p0Turn').textContent = '준비';
+        document.getElementById('p1Turn').textContent = p1 ? '준비' : '대기';
+        document.getElementById('waitingMsg').textContent = rm.players.length < 2 ? '상대 플레이어를 기다리고 있습니다...' : '2명 모두 준비 완료!';
+        const guestReady = Boolean(p1 && (p1.isBot || p1.ready));
+        if (rm.players.length >= 2) {
+          document.getElementById('waitingMsg').textContent = guestReady
+            ? '✅ 상대방 준비 완료! 방장이 대결을 시작할 수 있습니다.'
+            : `⏳ [${p1.nickname}]님이 [준비 완료] 버튼을 누르기를 기다리고 있습니다...`;
+        }
+        const guestCtrl = document.getElementById('guestReadyControls');
+        const btnGuestReady = document.getElementById('btnGuestReady');
+        if (!isHost && myIdx === 1 && p1 && !p1.isBot) {
+          guestCtrl.classList.remove('hidden');
+          btnGuestReady.textContent = p1.ready ? '✅ 준비 완료됨 (클릭 시 취소)' : '🙋 준비 완료 (게임 시작 동의)';
+          btnGuestReady.className = p1.ready
+            ? 'px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shadow-lg'
+            : 'px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black shadow-lg animate-pulse';
+        } else {
+          guestCtrl.classList.add('hidden');
+        }
+        const ctrl = document.getElementById('hostStartControls');
+        if (isHost) {
+          ctrl.classList.remove('hidden');
+          document.getElementById('btnAddBot').classList.toggle('hidden', rm.players.length >= 2);
+          const canStart = rm.players.length >= 2 && guestReady;
+          const startBtn = document.getElementById('btnStartMatch');
+          startBtn.disabled = !canStart;
+          startBtn.textContent = rm.players.length < 2 ? '🚀 대결 시작!' : (guestReady ? '🚀 대결 시작!' : '⏳ 상대 준비 대기 중');
+          startBtn.classList.toggle('opacity-50', !canStart);
+        } else {
+          ctrl.classList.add('hidden');
+        }
+        return;
+      }
+
+      waitingBox.classList.add('hidden');
+      playBox.classList.remove('hidden');
+      const g = rm.game;
+
+      if (g.selectingTurn && rm.status === 'PLAYING') {
+        if (!rrRouletteActive) {
+          rrRouletteActive = true;
+          if (rrRouletteTimer) clearInterval(rrRouletteTimer);
+          let step = 0;
+          rrRouletteTimer = setInterval(() => {
+            const hl = step % 2;
+            document.getElementById('p0Card').className = `p-3 rounded-2xl bg-[#080c17] border-2 ${hl === 0 ? 'border-amber-400 shadow-lg shadow-amber-500/20' : 'border-[#1f2942]'}`;
+            document.getElementById('p1Card').className = `p-3 rounded-2xl bg-[#080c17] border-2 ${hl === 1 ? 'border-amber-400 shadow-lg shadow-amber-500/20' : 'border-[#1f2942]'}`;
+            document.getElementById('p0Turn').textContent = hl === 0 ? '🎲 추첨 중...' : '대기';
+            document.getElementById('p1Turn').textContent = hl === 1 ? '🎲 추첨 중...' : '대기';
+            rrSfx.tick();
+            step++;
+          }, 130);
+        }
+      } else {
+        if (rrRouletteActive) {
+          rrRouletteActive = false;
+          if (rrRouletteTimer) { clearInterval(rrRouletteTimer); rrRouletteTimer = null; }
+          rrSfx.lock();
+        }
+        document.getElementById('p0Card').className = `p-3 rounded-2xl bg-[#080c17] border-2 ${g.turnIndex === 0 && rm.status === 'PLAYING' ? 'border-cyan-400' : 'border-[#1f2942]'}`;
+        document.getElementById('p1Card').className = `p-3 rounded-2xl bg-[#080c17] border-2 ${g.turnIndex === 1 && rm.status === 'PLAYING' ? 'border-rose-400' : 'border-[#1f2942]'}`;
+        document.getElementById('p0Turn').textContent = rm.status === 'PLAYING' ? (g.turnIndex === 0 ? '🔥 차례!' : '대기') : (rm.winnerIndex === 0 ? '👑 생존 승리' : '💥 아웃');
+        document.getElementById('p1Turn').textContent = rm.status === 'PLAYING' ? (g.turnIndex === 1 ? '🔥 차례!' : '대기') : (rm.winnerIndex === 1 ? '👑 생존 승리' : '💥 아웃');
+      }
+
+      if (lastRrStatus === 'PLAYING' && rm.status === 'FINISHED') {
+        rrSfx.bang();
+        setTimeout(rrSfx.victory, 350);
+      } else if (rm.status === 'PLAYING' && !g.selectingTurn && lastChamberSeen !== null && g.currentChamber !== lastChamberSeen) {
+        rrSfx.click();
+      }
+      lastChamberSeen = g.currentChamber;
+      lastRrStatus = rm.status;
+
+      const dots = document.getElementById('chamberDots');
+      dots.innerHTML = '';
+      for (let i = 0; i < g.chamberSize; i++) {
+        const d = document.createElement('div');
+        const fired = i < g.currentChamber;
+        const curr = i === g.currentChamber;
+        d.className = `w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-black ${
+          curr ? 'border-amber-400 bg-amber-500/20 text-amber-300 animate-pulse' :
+          fired ? 'border-slate-700 bg-slate-900 text-slate-600' :
+          'border-slate-600 bg-slate-800 text-slate-300'
+        }`;
+        d.textContent = i + 1;
+        dots.appendChild(d);
+      }
+      const rem = Math.max(1, g.chamberSize - g.currentChamber);
+      document.getElementById('oddsText').textContent = `💥 현재 격발 확률: 1 / ${rem} (${Math.round(100 / rem)}%)`;
+      document.getElementById('logText').textContent = g.lastLog || '';
+
+      const resBanner = document.getElementById('resultBanner');
+      if (rm.status === 'FINISHED') {
+        resBanner.classList.remove('hidden');
+        document.getElementById('resultText').textContent = rm.resultMessage;
+        const guestReady = Boolean(p1 && (p1.isBot || p1.ready));
+        const remStatusEl = document.getElementById('rematchStatusText');
+        if (remStatusEl) {
+          remStatusEl.textContent = rm.players.length < 2
+            ? '상대방이 퇴장했습니다.'
+            : guestReady
+            ? '✅ 상대방이 다시하기에 동의했습니다!'
+            : `⏳ 다시하기를 하려면 [${p1 ? p1.nickname : '상대방'}]님의 [다시하기 동의]가 필요합니다.`;
+        }
+        const gRemBtn = document.getElementById('btnGuestRematchReady');
+        if (gRemBtn) {
+          if (!isHost && myIdx === 1 && p1 && !p1.isBot) {
+            gRemBtn.classList.remove('hidden');
+            gRemBtn.textContent = p1.ready ? '✅ 다시하기 동의 완료 (취소)' : '🙋 다시하기 동의 (준비 완료)';
+            gRemBtn.className = p1.ready
+              ? 'px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs shadow'
+              : 'px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs shadow animate-pulse';
+          } else {
+            gRemBtn.classList.add('hidden');
+          }
+        }
+        const remBtn = document.getElementById('btnRematch');
+        remBtn.classList.toggle('hidden', !isHost);
+        if (isHost) {
+          const canRematch = rm.players.length >= 2 && guestReady;
+          remBtn.disabled = !canRematch;
+          remBtn.textContent = canRematch ? '🔁 한 판 더 시작!' : '⏳ 상대방 동의 대기 중...';
+          remBtn.classList.toggle('opacity-50', !canRematch);
+        }
+      } else {
+        resBanner.classList.add('hidden');
+      }
+
+      const isMyTurn = rm.status === 'PLAYING' && !g.selectingTurn && myIdx >= 0 && g.turnIndex === myIdx;
+      document.getElementById('btnPull').disabled = !isMyTurn;
+            document.getElementById('btnPass').disabled = !isMyTurn || (g.passLeft[myIdx] <= 0);
+      if (myIdx >= 0) {
+                document.getElementById('btnPass').textContent = `⏭️ 턴 넘기기 (${g.passLeft[myIdx]}회)`;
+      }
+    }
+
+    document.getElementById('createForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const title = document.getElementById('roomTitleInput').value.trim();
+      const password = document.getElementById('roomPwInput').value.trim();
+      const entryFee = Number(document.getElementById('roomEntryFeeInput')?.value || 0) || 0;
+      socket.emit('mg_create_room', { gameType: GAME_TYPE, title, clientId: CLIENT_UID, nickname: MY_NICK, password, entryFee }, (resp) => {
+        if (!resp || !resp.ok) { showToast(resp?.error || '방 생성 실패'); return; }
+        currentRoom = resp.room;
+        renderGame();
+      });
+    });
+
+    document.getElementById('btnAddBot').addEventListener('click', () => currentRoom && socket.emit('mg_add_bot', { roomId: currentRoom.id, clientId: CLIENT_UID }, (r) => { if (r && !r.ok && r.error) showToast(r.error); }));
+    document.getElementById('btnStartMatch').addEventListener('click', () => currentRoom && socket.emit('mg_start_game', { roomId: currentRoom.id, clientId: CLIENT_UID }, (r) => { if (r && !r.ok && r.error) showToast(r.error); }));
+    document.getElementById('btnRematch').addEventListener('click', () => currentRoom && socket.emit('mg_start_game', { roomId: currentRoom.id, clientId: CLIENT_UID }, (r) => { if (r && !r.ok && r.error) showToast(r.error); }));
+    const toggleMyReady = () => {
+      if (!currentRoom) return;
+      socket.emit('mg_toggle_ready', { roomId: currentRoom.id, clientId: CLIENT_UID }, (resp) => {
+        if (resp && !resp.ok && resp.error) showToast(resp.error);
+      });
+    };
+    document.getElementById('btnGuestReady')?.addEventListener('click', toggleMyReady);
+    document.getElementById('btnGuestRematchReady')?.addEventListener('click', toggleMyReady);
+
+    document.getElementById('btnLeaveRoom').addEventListener('click', () => {
+      if (!currentRoom) return;
+      const isHost = currentRoom.hostClientId === CLIENT_UID;
+      const isPlaying = currentRoom.status === 'PLAYING';
+      const isPlayer = currentRoom.players && currentRoom.players.some(p => p.clientId === CLIENT_UID);
+      const fee = Number(currentRoom.entryFee || 0);
+      let confirmMsg = isHost
+        ? '정말 방에서 나가시겠습니까? (방장이 나가면 방이 함께 삭제됩니다.)'
+        : '정말 방에서 나가시겠습니까?';
+      if (isPlaying && isPlayer) {
+        confirmMsg = fee > 0
+          ? `⚠️ 현재 스타(${fee.toLocaleString()} 스타)가 걸린 대결이 진행 중입니다!\n지금 나가면 게임이 즉시 종료되고 기권패 처리되어 걸어둔 스타를 모두 잃게 됩니다.\n정말 기권하고 나가시겠습니까?`
+          : '⚠️ 현재 대결이 진행 중입니다! 지금 나가면 즉시 기권패 처리됩니다.\n정말 나가시겠습니까?';
+      }
+      if (!window.confirm(confirmMsg)) return;
+      socket.emit('mg_leave_room', { roomId: currentRoom.id, clientId: CLIENT_UID });
+      currentRoom = null;
+      renderLobby();
+    });
+
+    document.getElementById('btnPull').addEventListener('click', () => currentRoom && socket.emit('mg_action', { roomId: currentRoom.id, clientId: CLIENT_UID, action: 'PULL' }));
+        document.getElementById('btnPass').addEventListener('click', () => { rrSfx.pass(); if (currentRoom) socket.emit('mg_action', { roomId: currentRoom.id, clientId: CLIENT_UID, action: 'PASS' }); });
+
+    socket.on('connect', () => socket.emit('mg_list_rooms', { gameType: GAME_TYPE }));
+    socket.on('mg_rooms_updated', ({ gameType, rooms }) => {
+      if (!gameType || gameType === GAME_TYPE) {
+        roomsList = rooms || [];
+        if (!currentRoom) renderLobby();
+      }
+    });
+    socket.on('mg_room_state', (rm) => {
+      if (currentRoom && rm && rm.id === currentRoom.id) {
+        currentRoom = rm;
+        renderGame();
+        if (window.ArcadeEconomy) window.ArcadeEconomy.refresh();
+      }
+    });
+    socket.on('mg_room_deleted', ({ roomId }) => {
+      if (currentRoom && currentRoom.id === roomId) {
+        currentRoom = null;
+        showToast('방장이 방을 종료했습니다.');
+        renderLobby();
+      }
+    });
+  </script>
+</body>
+</html>

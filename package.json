@@ -1,0 +1,13 @@
+{
+  "name": "live-multiplayer-arcade-server",
+  "version": "1.8.18",
+  "description": "Unified Multi-Game Server (React Portal + Passwordless Save-Code Auth + Marble Drop Roulette + OX Survival Quiz)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
